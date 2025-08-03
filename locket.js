@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v3.0 Ultimate-Squad
-// @version      3.0
-// @description  Ghim đầu/cổ thông minh: squad lock, prediction, delay swipe, head/cervical switch, anti ban
+// @name         AutoHeadlockProMax v3.1 GodLock-Tracking
+// @version      3.1
+// @description  Ghim đầu/cổ theo thời gian thực: tracking đầu, vuốt gần auto ghim, squad lock, prediction, chống ban
 // ==/UserScript==
 
 (function () {
@@ -23,6 +23,8 @@
     const scopeZoom = player.scopeZoom || 1;
     const adjustedFOV = BASE_FOV / scopeZoom;
     const swipeDetected = player.lastSwipeTime && Date.now() - player.lastSwipeTime < 350;
+    const aimDragDelta = player.lastDragOffset || 0;
+    const closeToHeadSwipe = aimDragDelta < 5; // gần như trúng
 
     const squadTargetId = globalThis._squadLockTargetId || null;
 
@@ -41,13 +43,15 @@
       return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    function applySmartLock(enemy, targetPos, distance, swipe) {
+    function applySmartLock(enemy, targetPos, distance, swipe, almostSwipe) {
       const easing = distance < 30 ? 1 : distance < 60 ? 0.85 : 0.7;
       const stick = 0.85 + Math.random() * 0.3;
 
+      const lockY = swipe || almostSwipe ? HEAD_OFFSET_Y : NECK_OFFSET_Y;
+
       enemy.aimPosition = {
         x: targetPos.x,
-        y: targetPos.y + (swipe ? HEAD_OFFSET_Y : NECK_OFFSET_Y),
+        y: targetPos.y + lockY,
         z: targetPos.z
       };
 
@@ -57,11 +61,7 @@
       enemy._internal_autoLock = true;
       enemy._internal_priority = AIM_PRIORITY;
 
-      // Anti-ban: xoá dấu vết auto aim
-      [
-        "autoLock", "aimHelp", "priority", "headLock",
-        "aimBot", "lockZone", "debugAim"
-      ].forEach(k => delete enemy[k]);
+      ["autoLock", "aimHelp", "priority", "headLock", "aimBot", "lockZone", "debugAim"].forEach(k => delete enemy[k]);
     }
 
     let bestTarget = null;
@@ -108,9 +108,8 @@
 
     if (bestTarget) {
       globalThis._squadLockTargetId = bestTarget.enemy.id;
-      applySmartLock(bestTarget.enemy, bestTarget.pos, bestTarget.dist, swipeDetected);
+      applySmartLock(bestTarget.enemy, bestTarget.pos, bestTarget.dist, swipeDetected, closeToHeadSwipe);
     } else {
-      // Nếu không còn địch khả dụng, xoá lock
       globalThis._squadLockTargetId = null;
     }
 
