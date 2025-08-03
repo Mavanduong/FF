@@ -1,28 +1,27 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v2.5 Swipe100%Headshot
-// @version      2.5
-// @description  Vuốt = 100% Ghim Đầu + Anti-phát hiện + Fake swipe aim assist
+// @name         AutoHeadlockProMax v2.7 ProximityPrecisionLock
+// @version      2.7
+// @description  Tính khoảng cách, chênh lệch độ cao, độ gần để ghim đầu cực chuẩn
 // ==/UserScript==
 
 (function () {
   try {
     if (!$response || !$response.body) return $done({});
     let body = $response.body;
+
     const HEAD_BONE = "head";
-    const MAX_DISTANCE = 135;
-    const PREDICTION = 1.35;
+    const MAX_DISTANCE = 140;
+    const PREDICTION = 1.4;
     const AIM_PRIORITY = 1000;
-    const FOV_ANGLE = 50;
-    const MAX_SPECTATORS = 0;
+    const FOV_ANGLE = 55;
 
     let data = JSON.parse(body);
     const player = data.player;
-    if (data?.spectators > MAX_SPECTATORS) return $done({ body });
 
-    function isInFOV(enemyPos, player, maxAngle = FOV_ANGLE) {
-      const dx = enemyPos.x - player.x,
-        dy = enemyPos.y - player.y,
-        dz = enemyPos.z - player.z;
+    function isInFOV(target, player, maxAngle = FOV_ANGLE) {
+      const dx = target.x - player.x,
+        dy = target.y - player.y,
+        dz = target.z - player.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (dist === 0) return false;
       const forward = player.direction || { x: 0, y: 0, z: 1 };
@@ -31,69 +30,68 @@
       return angle < maxAngle;
     }
 
-    function applySwipeHeadlock(enemy, targetPos) {
-      // Swipe-mimic jitter nhỏ giúp hợp pháp hóa hướng tay
-      const swipeJitterX = (Math.random() - 0.5) * 0.005;
-      const swipeJitterY = (Math.random() - 0.5) * 0.005;
+    function calcDistance(a, b) {
+      const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+      return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
 
-      const locked = {
-        x: targetPos.x + swipeJitterX,
-        y: targetPos.y + swipeJitterY,
+    function applyProLock(enemy, targetPos) {
+      enemy.aimPosition = {
+        x: targetPos.x,
+        y: targetPos.y,
         z: targetPos.z
       };
-
-      // Kích hoạt khóa tự nhiên khi vuốt: cực kỳ mượt
-      enemy.aimPosition = locked;
-      enemy.smoothLock = true;
-      enemy.lockSpeed = 0.96 + Math.random() * 0.03;
-      enemy.stickiness = 0.93 + Math.random() * 0.05;
-      enemy.swipeTracking = true; // Nội bộ hỗ trợ swipe
-
-      // Nội bộ
+      enemy.smoothLock = false;
+      enemy.lockSpeed = 1.0;
+      enemy.stickiness = 1.0;
       enemy._internal_autoLock = true;
       enemy._internal_priority = AIM_PRIORITY;
 
-      // Xóa trường đáng nghi
-      const riskyKeys = [
-        "autoLock", "aimHelp", "lockZone", "recoilControl",
-        "aimBot", "headLock", "debugAim", "priority"
-      ];
-      riskyKeys.forEach(k => delete enemy[k]);
+      // Xoá các trường có khả năng bị phát hiện
+      ["autoLock", "aimHelp", "priority", "headLock", "aimBot", "lockZone", "debugAim"].forEach(k => delete enemy[k]);
     }
+
+    let bestTarget = null;
+    let bestScore = 0;
 
     if (Array.isArray(data.targets)) {
       for (let enemy of data.targets) {
-        if (!enemy?.bone?.[HEAD_BONE]) continue;
-        if (enemy.obstacleBetween) continue;
-
+        if (!enemy?.bone?.[HEAD_BONE] || enemy.obstacleBetween) continue;
         const head = enemy.bone[HEAD_BONE];
-        const dx = head.x - player.x;
-        const dy = head.y - player.y;
-        const dz = head.z - player.z;
-        const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (distance > MAX_DISTANCE) continue;
 
         const velocity = enemy.velocity || { x: 0, y: 0, z: 0 };
-        const predictHead = {
+        const predictedHead = {
           x: head.x + velocity.x * PREDICTION,
           y: head.y + velocity.y * PREDICTION,
           z: head.z + velocity.z * PREDICTION
         };
 
-        if (!isInFOV(predictHead, player)) continue;
-        if (!["standing", "crouching", "jumping", "prone"].includes(enemy.posture)) continue;
+        if (!isInFOV(predictedHead, player)) continue;
 
-        // Ghim ngay nếu có swipe
-        if (player.inputMethod === "swipe" || player.recentTouchAngleDelta > 1.0) {
-          applySwipeHeadlock(enemy, predictHead);
+        const distance = calcDistance(player, predictedHead);
+        if (distance > MAX_DISTANCE) continue;
+
+        const heightDiff = Math.abs(predictedHead.y - player.y);
+        const heightRatio = heightDiff / distance;
+        const proximityScore = (1 / distance) * (1 - heightRatio); // Tối ưu gần + ngang tầm
+
+        if (["standing", "jumping", "crouching", "prone"].includes(enemy.posture)) {
+          if (proximityScore > bestScore) {
+            bestScore = proximityScore;
+            bestTarget = { enemy, pos: predictedHead };
+          }
         }
       }
+    }
+
+    if (bestTarget) {
+      applyProLock(bestTarget.enemy, bestTarget.pos);
     }
 
     body = JSON.stringify(data);
     $done({ body });
 
-  } catch (err) {
+  } catch (e) {
     $done({});
   }
 })();
