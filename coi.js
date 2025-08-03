@@ -1,20 +1,21 @@
 // ==UserScript==
-// @name         FixRecoil v2.0 Stealth
-// @version      2.0
-// @description  Chống giật, giữ tâm siêu ổn định mà không bị phát hiện
+// @name         FixRecoil v2.1 ProMovement Stealth
+// @version      2.1
+// @description  Chống giật siêu mượt cả khi nhảy và di chuyển nhanh - không lộ
 // ==/UserScript==
 
 (function () {
   try {
     if (!$response || !$response.body) return $done({});
-
     let body = $response.body;
     let data = JSON.parse(body);
 
-    if (data?.weaponStats) {
+    if (data?.weaponStats && data?.player) {
+      const movementSpeed = data.player?.velocity?.magnitude || 0;
+      const isJumping = data.player?.posture === "jumping";
+
       for (let weapon of data.weaponStats) {
-        // Ghi đè nội bộ (không trả ra mạng)
-        weapon._internalFix = true;
+        // Backup gốc để tránh mất dữ liệu
         weapon._rawBackup = {
           recoil: weapon.recoil,
           verticalRecoil: weapon.verticalRecoil,
@@ -25,21 +26,29 @@
           stability: weapon.stability
         };
 
-        // Giảm giá trị trong giới hạn hợp lý, không về 0 hoặc max
-        weapon.recoil = 0.2 + Math.random() * 0.05;
-        weapon.verticalRecoil = 0.3 + Math.random() * 0.05;
-        weapon.horizontalRecoil = 0.3 + Math.random() * 0.05;
-        weapon.shake = 0.1;
-        weapon.spread = 0.01; // nhỏ hơn mặc định nhưng không về 0
-        weapon.recoilRecovery = 150 + Math.random() * 30;
-        weapon.stability = 120 + Math.random() * 10;
+        // Điều chỉnh động dựa theo trạng thái
+        let recoilFactor = 1.0;
+        if (isJumping) {
+          recoilFactor = 1.25; // nhảy = khó kiểm soát hơn
+        } else if (movementSpeed > 2.5) {
+          recoilFactor = 1.1; // chạy nhanh = tăng rung
+        }
 
-        // Tạo marker để engine nội bộ fix 100% (không lộ ra ngoài)
+        // Áp dụng recoil thấp hơn theo factor nhưng không về 0
+        weapon.recoil = Math.max(0.15, 0.2 * (1 / recoilFactor)) + Math.random() * 0.03;
+        weapon.verticalRecoil = Math.max(0.2, 0.25 * (1 / recoilFactor)) + Math.random() * 0.03;
+        weapon.horizontalRecoil = Math.max(0.2, 0.25 * (1 / recoilFactor)) + Math.random() * 0.03;
+        weapon.shake = 0.08;
+        weapon.spread = 0.009;
+        weapon.recoilRecovery = 160 + Math.random() * 25;
+        weapon.stability = 125 + Math.random() * 10;
+
+        weapon._internalFix = true;
         weapon._ghostStabilizer = true;
       }
     }
 
-    // Xoá toàn bộ marker kỹ thuật tránh bị leak hoặc log
+    // Xoá các marker kỹ thuật trước khi trả về
     for (let weapon of data.weaponStats || []) {
       delete weapon._internalFix;
       delete weapon._ghostStabilizer;
@@ -50,7 +59,6 @@
     $done({ body });
 
   } catch (err) {
-    // Không log lỗi để tránh bị lộ
     $done({});
   }
 })();
