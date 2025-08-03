@@ -1,75 +1,87 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v1.5
-// @version      1.5
-// @description  Ghim đầu toàn diện: prediction, ưu tiên tư thế, chặn tường, smooth aim
+// @name         AutoHeadlockProMax v2.2 Always-On
+// @version      2.2
+// @description  Ghim đầu 100% + không tắt khi bị xem + giả lập người thật
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v1.5 ACTIVATED");
+console.log("🔥 AutoHeadlockProMax v2.2 Always-On ACTIVATED");
 
-if (!$response || !$response.body) {
-  $done({});
-  return;
-}
+if (!$response || !$response.body) return $done({});
 
 let body = $response.body;
 
 try {
   const HEAD_BONE = "head";
-  const MAX_DISTANCE = 120.0;
-  const PREDICTION_FACTOR = 1.25;
+  const MAX_DISTANCE = 120;
+  const PREDICTION = 1.2;
   const AIM_PRIORITY = 999;
-  const WALL_AVOIDANCE = true;
 
   let data = JSON.parse(body);
   const player = data.player;
+
+  function isInFOV(enemy, player, maxAngle = 45) {
+    const dx = enemy.x - player.x, dy = enemy.y - player.y, dz = enemy.z - player.z;
+    const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if (dist === 0) return false;
+    const forward = player.direction || { x: 0, y: 0, z: 1 };
+    const dot = (dx * forward.x + dy * forward.y + dz * forward.z) / dist;
+    const angle = Math.acos(dot) * (180 / Math.PI);
+    return angle < maxAngle;
+  }
+
+  function applySmartLock(enemy, targetPos) {
+    const jitter = (Math.random() - 0.5) * 0.015;
+    enemy.aimPosition = {
+      x: targetPos.x + jitter,
+      y: targetPos.y + jitter,
+      z: targetPos.z + jitter
+    };
+    enemy.smoothLock = true;
+    enemy.lockSpeed = 0.92 + Math.random() * 0.03;
+    enemy.stickiness = 0.93 + Math.random() * 0.04;
+  }
 
   if (data && data.targets) {
     for (let enemy of data.targets) {
       if (!enemy?.bone?.[HEAD_BONE]) continue;
 
       const head = enemy.bone[HEAD_BONE];
-
-      // Tính khoảng cách 3D
       const dx = head.x - player.x;
       const dy = head.y - player.y;
       const dz = head.z - player.z;
-      const distance = Math.sqrt(dx ** 2 + dy ** 2 + dz ** 2);
+      const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
       if (distance > MAX_DISTANCE) continue;
 
-      // Dự đoán vị trí đầu
       const v = enemy.velocity || { x: 0, y: 0, z: 0 };
       const predictHead = {
-        x: head.x + v.x * PREDICTION_FACTOR,
-        y: head.y + v.y * PREDICTION_FACTOR,
-        z: head.z + v.z * PREDICTION_FACTOR
+        x: head.x + v.x * PREDICTION,
+        y: head.y + v.y * PREDICTION,
+        z: head.z + v.z * PREDICTION
       };
 
-      // Kiểm tra vật cản
-      if (WALL_AVOIDANCE && enemy.obstacleBetween) continue;
+      if (enemy.obstacleBetween) continue;
+      if (!isInFOV(predictHead, player)) continue;
 
-      // Ưu tiên theo tư thế
-      const posture = enemy.posture || "";
-      const isTargetable = ["standing", "jumping", "crouching"].includes(posture);
+      if (["standing", "jumping", "crouching"].includes(enemy.posture)) {
+        applySmartLock(enemy, predictHead);
 
-      if (isTargetable) {
-        enemy.aimPosition = predictHead;
         enemy.autoLock = true;
         enemy.recoilControl = true;
         enemy.lockZone = "HEAD";
         enemy.aimHelp = true;
         enemy.priority = AIM_PRIORITY;
 
-        // Smooth aim hỗ trợ cảm giác mượt
-        enemy.smoothLock = true;
-        enemy.stickiness = 0.95;
-        enemy.dragCompensation = true;
+        // Fake người thật
+        enemy.obfuscatePattern = true;
+        enemy.fakeInputVariation = true;
+        enemy.emulateHumanDelay = true;
       }
     }
   }
 
   body = JSON.stringify(data);
 } catch (e) {
-  console.log("❌ AutoHeadlockProMax v1.5 ERROR:", e);
+  console.log("❌ AutoHeadlockProMax v2.2 ERROR: " + e);
 }
 
 $done({ body });
