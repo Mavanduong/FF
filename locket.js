@@ -1,27 +1,30 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v2.7 ProximityPrecisionLock
-// @version      2.7
-// @description  Tính khoảng cách, chênh lệch độ cao, độ gần để ghim đầu cực chuẩn
+// @name         AutoHeadlockProMax v2.8 Ultimate
+// @version      2.8
+// @description  Ghim đầu toàn diện: prediction, góc nhìn, khoảng cách, chiều cao, ống ngắm, tốc độ mượt, giả lập người dùng
 // ==/UserScript==
 
 (function () {
   try {
     if (!$response || !$response.body) return $done({});
     let body = $response.body;
+    let data = JSON.parse(body);
 
     const HEAD_BONE = "head";
-    const MAX_DISTANCE = 140;
-    const PREDICTION = 1.4;
+    const MAX_DISTANCE = 150;
+    const BASE_FOV = 55;
+    const BASE_PREDICTION = 1.2;
     const AIM_PRIORITY = 1000;
-    const FOV_ANGLE = 55;
+    const HEAD_OFFSET_Y = 0.04;
 
-    let data = JSON.parse(body);
     const player = data.player;
+    const scopeZoom = player.scopeZoom || 1;
+    const adjustedFOV = BASE_FOV / scopeZoom;
 
-    function isInFOV(target, player, maxAngle = FOV_ANGLE) {
+    function isInFOV(target, player, maxAngle = adjustedFOV) {
       const dx = target.x - player.x,
-        dy = target.y - player.y,
-        dz = target.z - player.z;
+            dy = target.y - player.y,
+            dz = target.z - player.z;
       const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (dist === 0) return false;
       const forward = player.direction || { x: 0, y: 0, z: 1 };
@@ -35,20 +38,27 @@
       return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    function applyProLock(enemy, targetPos) {
+    function applyUltimateLock(enemy, targetPos, distance) {
+      const easing = distance < 30 ? 1 : distance < 60 ? 0.85 : 0.7;
+      const rand = () => 0.85 + Math.random() * 0.3;
+
       enemy.aimPosition = {
         x: targetPos.x,
-        y: targetPos.y,
+        y: targetPos.y + HEAD_OFFSET_Y, // Ghim trên đỉnh đầu
         z: targetPos.z
       };
+
+      enemy.lockSpeed = easing;
+      enemy.stickiness = rand();
       enemy.smoothLock = false;
-      enemy.lockSpeed = 1.0;
-      enemy.stickiness = 1.0;
       enemy._internal_autoLock = true;
       enemy._internal_priority = AIM_PRIORITY;
 
-      // Xoá các trường có khả năng bị phát hiện
-      ["autoLock", "aimHelp", "priority", "headLock", "aimBot", "lockZone", "debugAim"].forEach(k => delete enemy[k]);
+      // Xoá các trường khả nghi
+      [
+        "autoLock", "aimHelp", "priority", "headLock",
+        "aimBot", "lockZone", "debugAim"
+      ].forEach(k => delete enemy[k]);
     }
 
     let bestTarget = null;
@@ -58,40 +68,47 @@
       for (let enemy of data.targets) {
         if (!enemy?.bone?.[HEAD_BONE] || enemy.obstacleBetween) continue;
         const head = enemy.bone[HEAD_BONE];
-
         const velocity = enemy.velocity || { x: 0, y: 0, z: 0 };
+
+        const distance = calcDistance(player, head);
+        if (distance > MAX_DISTANCE) continue;
+
+        // Điều chỉnh prediction theo khoảng cách
+        let prediction = BASE_PREDICTION;
+        if (distance < 30) prediction = 0.6;
+        else if (distance > 100) prediction = 1.5;
+
         const predictedHead = {
-          x: head.x + velocity.x * PREDICTION,
-          y: head.y + velocity.y * PREDICTION,
-          z: head.z + velocity.z * PREDICTION
+          x: head.x + velocity.x * prediction,
+          y: head.y + velocity.y * prediction,
+          z: head.z + velocity.z * prediction
         };
 
         if (!isInFOV(predictedHead, player)) continue;
 
-        const distance = calcDistance(player, predictedHead);
-        if (distance > MAX_DISTANCE) continue;
-
         const heightDiff = Math.abs(predictedHead.y - player.y);
         const heightRatio = heightDiff / distance;
-        const proximityScore = (1 / distance) * (1 - heightRatio); // Tối ưu gần + ngang tầm
+        const proximityScore = (1 / distance) * (1 - heightRatio);
 
-        if (["standing", "jumping", "crouching", "prone"].includes(enemy.posture)) {
-          if (proximityScore > bestScore) {
-            bestScore = proximityScore;
-            bestTarget = { enemy, pos: predictedHead };
-          }
+        const aimingAtMe = enemy.aimingAt === player.id || enemy.isFiring;
+        const postureBonus = ["standing", "crouching", "prone"].includes(enemy.posture) ? 1.0 : 0.8;
+        const finalScore = proximityScore * (aimingAtMe ? 1.5 : 1) * postureBonus;
+
+        if (finalScore > bestScore) {
+          bestScore = finalScore;
+          bestTarget = { enemy, pos: predictedHead, dist: distance };
         }
       }
     }
 
     if (bestTarget) {
-      applyProLock(bestTarget.enemy, bestTarget.pos);
+      applyUltimateLock(bestTarget.enemy, bestTarget.pos, bestTarget.dist);
     }
 
     body = JSON.stringify(data);
     $done({ body });
 
-  } catch (e) {
+  } catch (err) {
     $done({});
   }
 })();
