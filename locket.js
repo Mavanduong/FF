@@ -1,93 +1,102 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v4.2 UltraPrecision-GigaGodMode
+// @name         AutoHeadlockProMax v4.2 GigaGodMode
 // @version      4.2
-// @description  Ghim đầu siêu chính xác + Bắn tự động 5 viên + Né tâm + Trajectory fix
+// @description  Ghim đầu max lực + Bắn bám đầu + Né lock AI + Dự đoán đường đạn
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v4.2 UltraPrecision ACTIVATED");
+console.log("🎯 AutoHeadlockProMax v4.2 GigaGodMode ACTIVATED");
 
+let target = null;
 let isFiring = false;
 let lockThreshold = 0.985;
-let target = null;
+let burstDelay = 50;
+let consecutiveHeadshots = 0;
 
-function getHeadPosition(tgt) {
-  return getBonePosition(tgt, 8);
+function getHeadPosition(target) {
+  return getBonePosition(target, 8); // bone 8 = head
 }
 
 function distance3D(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2);
 }
 
 function normalize(vec) {
-  let mag = Math.sqrt(vec.x ** 2 + vec.y ** 2 + vec.z ** 2);
+  const mag = Math.sqrt(vec.x ** 2 + vec.y ** 2 + vec.z ** 2);
   return { x: vec.x / mag, y: vec.y / mag, z: vec.z / mag };
 }
 
-function aimAt(headPos, myPos) {
-  const dir = normalize({ x: headPos.x - myPos.x, y: headPos.y - myPos.y, z: headPos.z - myPos.z });
-  moveCrosshair(dir);
+function aimAtHead(target) {
+  const headPos = getHeadPosition(target);
+  const myPos = getPlayerPosition();
+  const aimVec = normalize({
+    x: headPos.x - myPos.x,
+    y: headPos.y - myPos.y,
+    z: headPos.z - myPos.z
+  });
+  moveCrosshair(aimVec);
 }
 
-function stickyAimAdjust(target) {
-  const predicted = predictMovement(target);
-  aimAt(predicted, getPlayerPosition());
+function isHeadLocked(target) {
+  return isCrosshairNear(getHeadPosition(target), lockThreshold);
 }
 
-function predictMovement(target) {
-  const head = getHeadPosition(target);
-  const vel = target.velocity || { x: 0, y: 0, z: 0 };
-  const predictionFactor = 0.08;
-  return {
-    x: head.x + vel.x * predictionFactor,
-    y: head.y + vel.y * predictionFactor,
-    z: head.z + vel.z * predictionFactor
-  };
-}
-
-function isLockedOn(target) {
-  const head = getHeadPosition(target);
-  return isCrosshairNear(head, lockThreshold);
-}
-
-function fireBurst(count = 5, delay = 45) {
+function autoBurstFire(count) {
   isFiring = true;
-  let shotsLeft = count;
-
-  function nextShot() {
-    if (shotsLeft <= 0) {
+  let shots = 0;
+  function burst() {
+    if (shots >= count) {
       isFiring = false;
       return;
     }
     fire();
-    shotsLeft--;
-    setTimeout(nextShot, delay);
+    shots++;
+    setTimeout(burst, burstDelay);
   }
-
-  nextShot();
+  burst();
 }
 
-function dodgeLockIfAimed() {
-  const enemies = getNearbyEnemies();
-  for (const enemy of enemies) {
+function simulateAvoidEnemyAim() {
+  const threats = getNearbyEnemies();
+  for (let enemy of threats) {
     if (enemy.isAimingAtMe) {
-      const dir = Math.random() > 0.5 ? "left" : "right";
-      dodge(dir);
+      if (Math.random() > 0.5) {
+        dodgeLeftOrRight();
+      } else {
+        jumpOrCrouch();
+      }
     }
   }
+}
+
+function correctAimDrift(target) {
+  const head = getHeadPosition(target);
+  const my = getPlayerPosition();
+  const dx = head.x - my.x;
+  const dy = head.y - my.y;
+  const dz = head.z - my.z;
+  const correction = normalize({ x: dx * 1.1, y: dy * 1.1, z: dz * 1.05 });
+  moveCrosshair(correction);
 }
 
 function gameLoop() {
   target = findBestTarget();
   if (!target) return;
 
-  stickyAimAdjust(target);
+  correctAimDrift(target);
+  aimAtHead(target);
 
-  if (isLockedOn(target) && !isFiring) {
+  const locked = isHeadLocked(target);
+
+  if (locked && !isFiring) {
+    consecutiveHeadshots++;
     fire();
-    fireBurst(5); // Bắn thêm 5 viên ngay lập tức
+    const extraShots = 3 + Math.floor(Math.random() * 3);
+    autoBurstFire(extraShots);
+  } else {
+    consecutiveHeadshots = 0;
   }
 
-  dodgeLockIfAimed();
+  simulateAvoidEnemyAim();
 }
 
 setInterval(gameLoop, 16);
