@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         AutoHeadlockProMax v4.4 HyperGodMode
-// @version      4.4.0
-// @description  Dự đoán di chuyển, ghi nhớ kẻ địch, ghim đầu cưỡng bức, né AI nâng cao, xuyên vật thể nếu cần
+// @version      4.4.1
+// @description  Dự đoán di chuyển, ghi nhớ kẻ địch, ghim đầu cưỡng bức, né AI nâng cao, xuyên vật thể nếu cần + Sound ESP Tracking
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v4.4 HyperGodMode ACTIVATED");
+console.log("🎯 AutoHeadlockProMax v4.4.1 HyperGodMode + SoundESP ACTIVATED");
 
 let target = null;
 let isFiring = false;
@@ -17,6 +17,7 @@ const softLockThreshold = 0.97;
 const bodyLockThreshold = 0.88;
 
 const enemyStats = new Map();
+let soundTargets = [];
 
 function getHeadPosition(target) {
   return getBonePosition(target, getPreferredBone(target));
@@ -29,7 +30,7 @@ function getBodyPosition(target) {
 function getPreferredBone(target) {
   const stats = enemyStats.get(target.id);
   if (!stats) return 8;
-  if (stats.jumps > stats.crouches * 2) return 3; // hay nhảy, ưu tiên bụng
+  if (stats.jumps > stats.crouches * 2) return 3;
   return 8;
 }
 
@@ -67,7 +68,7 @@ function moveSmoothTo(vec, smoothing = 0.7) {
   });
 }
 
-function aimAtPredictedHead(target, smoothing = 0.7) {
+function aimAtPredictedHead(target, smoothing = 0.5) {
   const head = predictHeadPosition(target);
   const myPos = getPlayerPosition();
   const aimVec = normalize({
@@ -75,6 +76,11 @@ function aimAtPredictedHead(target, smoothing = 0.7) {
     y: head.y - myPos.y,
     z: head.z - myPos.z
   });
+
+  if (soundTargets.length && distance3D(head, soundTargets[0].pos) < 5) {
+    smoothing = 0.3;
+  }
+
   moveSmoothTo(aimVec, smoothing);
 }
 
@@ -146,6 +152,20 @@ function trackEnemyBehavior(enemy) {
   enemyStats.set(enemy.id, stat);
 }
 
+function updateSoundTargets() {
+  const sounds = getRecentEnemySounds?.() || [];
+  soundTargets = sounds
+    .filter(s => Date.now() - s.timestamp < 800)
+    .map(s => ({ pos: s.position, priority: s.type === 'footstep' ? 1 : (s.type === 'reload' ? 2 : 3) }));
+}
+
+function findSoundTarget() {
+  updateSoundTargets();
+  if (soundTargets.length === 0) return null;
+  soundTargets.sort((a, b) => b.priority - a.priority);
+  return soundTargets[0].pos;
+}
+
 function findBestTarget() {
   const enemies = getNearbyEnemies();
   let best = null;
@@ -171,7 +191,19 @@ function findBestTarget() {
 
 function gameLoop() {
   target = findBestTarget();
-  if (!target) return;
+  if (!target) {
+    const soundPos = findSoundTarget();
+    if (soundPos) {
+      const myPos = getPlayerPosition();
+      const vec = normalize({
+        x: soundPos.x - myPos.x,
+        y: soundPos.y - myPos.y,
+        z: soundPos.z - myPos.z
+      });
+      moveSmoothTo(vec, 0.5);
+    }
+    return;
+  }
 
   aimAtPredictedHead(target, getDynamicSmoothing(target));
   elevateIfBodyLocked(target);
