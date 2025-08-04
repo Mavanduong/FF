@@ -1,14 +1,15 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v4.2 GigaGodMode
-// @version      4.2
-// @description  Ghim đầu max lực + Bắn bám đầu + Né lock AI + Dự đoán đường đạn
+// @name         AutoHeadlockProMax v4.2.1 GigaGodMode
+// @version      4.2.1
+// @description  Ghim đầu mượt khi vuốt nhẹ, bắn bám đầu, né AI, dự đoán hướng đầu
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v4.2 GigaGodMode ACTIVATED");
+console.log("🎯 AutoHeadlockProMax v4.2.1 GigaGodMode ACTIVATED");
 
 let target = null;
 let isFiring = false;
 let lockThreshold = 0.985;
+let softLockThreshold = 0.93; // Vuốt nhẹ gần đầu vẫn hỗ trợ
 let burstDelay = 50;
 let consecutiveHeadshots = 0;
 
@@ -25,7 +26,7 @@ function normalize(vec) {
   return { x: vec.x / mag, y: vec.y / mag, z: vec.z / mag };
 }
 
-function aimAtHead(target) {
+function aimAtHead(target, smoothing = 0.7) {
   const headPos = getHeadPosition(target);
   const myPos = getPlayerPosition();
   const aimVec = normalize({
@@ -33,11 +34,15 @@ function aimAtHead(target) {
     y: headPos.y - myPos.y,
     z: headPos.z - myPos.z
   });
-  moveCrosshair(aimVec);
+  moveCrosshair({
+    x: aimVec.x * smoothing,
+    y: aimVec.y * smoothing,
+    z: aimVec.z * smoothing
+  });
 }
 
-function isHeadLocked(target) {
-  return isCrosshairNear(getHeadPosition(target), lockThreshold);
+function isHeadLocked(target, threshold = lockThreshold) {
+  return isCrosshairNear(getHeadPosition(target), threshold);
 }
 
 function autoBurstFire(count) {
@@ -82,12 +87,14 @@ function gameLoop() {
   target = findBestTarget();
   if (!target) return;
 
+  // Mỗi frame đều chỉnh nhẹ về đầu
   correctAimDrift(target);
-  aimAtHead(target);
+  aimAtHead(target, 0.6); // kéo nhẹ hỗ trợ
 
-  const locked = isHeadLocked(target);
+  const softLocked = isHeadLocked(target, softLockThreshold);
+  const fullyLocked = isHeadLocked(target, lockThreshold);
 
-  if (locked && !isFiring) {
+  if ((softLocked || fullyLocked) && !isFiring) {
     consecutiveHeadshots++;
     fire();
     const extraShots = 3 + Math.floor(Math.random() * 3);
