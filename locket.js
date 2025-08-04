@@ -1,94 +1,93 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v3.21 Final
+// @name         AutoHeadlockProMax v3.21
 // @version      3.21
-// @description  Ghim 100% đầu bất chấp: jump, chạy, obstacle, sway, vuốt dài lock mạnh
+// @description  Ghim 100% đạn thẳng vào đầu, bất kể di chuyển, nhảy, vật cản
 // ==/UserScript==
 
 (function () {
-  try {
-    if (!$response || !$response.body) return $done({});
-    let data = JSON.parse($response.body);
+  console.log("🎯 AutoHeadlockProMax v3.21 ACTIVATED");
 
-    const HEAD = "head", MAX_DIST = 180, BASE_FOV = 55, AIM_POWER = 1.2;
-    const HEAD_Y_OFFSET = 0.04, NECK_Y_OFFSET = -0.08;
-    const SWAY_MAGNITUDE = 0.015;
-    const player = data.player;
-    const fov = BASE_FOV / (player.scopeZoom || 1);
-    const swipe = player.lastSwipeTime && Date.now() - player.lastSwipeTime < 400;
-    const squadLockId = globalThis._squadTargetId || null;
+  const HEAD_BONE_INDEX = 8;
+  const LOCK_RANGE = 120; // mét
+  const LOCK_ANGLE = 60;  // độ, FOV
 
-    const calcDist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+  game.on("tick", () => {
+    const player = game.getLocalPlayer();
+    if (!player || !player.weaponReady) return;
 
-    function inFOV(target, player, maxFOV = fov) {
-      const dx = target.x - player.x, dy = target.y - player.y, dz = target.z - player.z;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      const forward = player.direction || { x: 0, y: 0, z: 1 };
-      const dot = (dx * forward.x + dy * forward.y + dz * forward.z) / dist;
-      const angle = Math.acos(dot) * (180 / Math.PI);
-      return angle < maxFOV;
-    }
+    const enemies = game.getEnemiesInRange(LOCK_RANGE);
+    let bestTarget = null;
+    let bestScore = 0;
 
-    function applyLock(enemy, head, dist, isSwipe) {
-      const offsetY = isSwipe ? HEAD_Y_OFFSET : NECK_Y_OFFSET;
-      const swayX = (Math.random() - 0.5) * SWAY_MAGNITUDE * 2;
-      const swayY = (Math.random() - 0.5) * SWAY_MAGNITUDE * 2;
-      const swayZ = (Math.random() - 0.5) * SWAY_MAGNITUDE * 2;
-      const distanceFactor = dist < 40 ? 1.2 : dist < 80 ? 1.0 : 0.85;
-      const lockIntensity = swipe ? 1.3 : 0.95;
+    for (const enemy of enemies) {
+      if (!enemy.isVisible && !canShootThrough(enemy)) continue;
 
-      enemy.aimPosition = {
-        x: head.x + swayX,
-        y: head.y + offsetY + swayY,
-        z: head.z + swayZ
-      };
-      enemy.lockSpeed = AIM_POWER * distanceFactor;
-      enemy.stickiness = lockIntensity;
-      enemy._internal_autoLock = true;
-      enemy._internal_priority = 999;
-      enemy.smoothLock = false;
+      const head = predictHead(enemy);
+      const score = calculateLockScore(player, head, enemy.velocity);
 
-      ["autoLock", "aimBot", "priority", "lockZone", "debugAim"].forEach(k => delete enemy[k]);
-    }
-
-    let best = null, bestScore = 0;
-
-    if (Array.isArray(data.targets)) {
-      for (let t of data.targets) {
-        if (!t?.bone?.[HEAD]) continue;
-
-        const h = t.bone[HEAD], v = t.velocity || { x: 0, y: 0, z: 0 };
-        const dist = calcDist(player, h); if (dist > MAX_DIST) continue;
-
-        let prediction = dist < 30 ? 0.6 : dist > 100 ? 1.5 : 1.0;
-        const predicted = { x: h.x + v.x * prediction, y: h.y + v.y * prediction, z: h.z + v.z * prediction };
-
-        const visible = inFOV(predicted, player);
-        const obstacleInSight = t.obstacleBetween && !t.inCrosshair;
-
-        if (!visible || obstacleInSight) continue;
-
-        const yDiff = Math.abs(predicted.y - player.y);
-        const score = (1 / dist) * (1 - yDiff / dist) * (t.isFiring || t.aimingAt === player.id ? 1.3 : 1.0);
-
-        if (!squadLockId && score > bestScore) {
-          best = { target: t, head: predicted, dist };
-          bestScore = score;
-        } else if (squadLockId && t.id === squadLockId) {
-          best = { target: t, head: predicted, dist };
-          break;
-        }
+      if (score > bestScore) {
+        bestScore = score;
+        bestTarget = enemy;
       }
     }
 
-    if (best) {
-      globalThis._squadTargetId = best.target.id;
-      applyLock(best.target, best.head, best.dist, swipe);
-    } else {
-      globalThis._squadTargetId = null;
+    if (bestTarget) {
+      const targetHead = predictHead(bestTarget);
+      forceAimAt(targetHead); // CỨNG 100%
+      if (player.isShooting || isAutoFireEnabled()) fire();
     }
+  });
 
-    $done({ body: JSON.stringify(data) });
-  } catch (e) {
-    $done({});
+  function predictHead(enemy) {
+    const headPos = getBonePosition(enemy, HEAD_BONE_INDEX);
+    return {
+      x: headPos.x + enemy.velocity.x * 0.4,
+      y: headPos.y + enemy.velocity.y * 0.4,
+      z: headPos.z + enemy.velocity.z * 0.4
+    };
+  }
+
+  function calculateLockScore(player, headPos, velocity) {
+    const distance = getDistance(player.pos, headPos);
+    const angle = getAngleBetween(player.view, headPos);
+
+    if (distance > LOCK_RANGE || angle > LOCK_ANGLE) return 0;
+
+    const movingBonus = Math.min(velocity.length * 2, 20);
+    const heightFactor = 1 - Math.abs(headPos.y - player.pos.y) / 50;
+    return (100 - distance) * heightFactor + movingBonus;
+  }
+
+  function forceAimAt(pos) {
+    // Không sway, không micro, aim cứng vào đầu
+    game.setViewAngleTo(pos);
+  }
+
+  function fire() {
+    game.pressFire(true);
+    setTimeout(() => game.pressFire(false), 40);
+  }
+
+  function canShootThrough(enemy) {
+    const head = getBonePosition(enemy, HEAD_BONE_INDEX);
+    return game.traceLine(game.getLocalPlayer().eyePos, head, true); // true = ignore walls
+  }
+
+  function isAutoFireEnabled() {
+    return game.settings.autoFire || game.input.shootingGestureDetected;
+  }
+
+  function getDistance(a, b) {
+    const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  function getAngleBetween(view, target) {
+    // Tính góc giữa hướng nhìn và mục tiêu
+    const dx = target.x - view.x, dy = target.y - view.y, dz = target.z - view.z;
+    const dot = dx * view.x + dy * view.y + dz * view.z;
+    const magA = Math.sqrt(view.x**2 + view.y**2 + view.z**2);
+    const magB = Math.sqrt(dx**2 + dy**2 + dz**2);
+    return Math.acos(dot / (magA * magB)) * (180 / Math.PI);
   }
 })();
