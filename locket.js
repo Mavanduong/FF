@@ -1,97 +1,93 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v4.0 GigaGodMode
-// @version      4.0
-// @description  Ghim đầu địch toàn diện với AI nâng cấp: hút đầu tuyệt đối, redirect đạn, tự bắn, tránh tâm địch, lock tốc độ cao
+// @name         AutoHeadlockProMax v4.2 UltraPrecision-GigaGodMode
+// @version      4.2
+// @description  Ghim đầu siêu chính xác + Bắn tự động 5 viên + Né tâm + Trajectory fix
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v4.0 GigaGodMode Activated");
+console.log("🎯 AutoHeadlockProMax v4.2 UltraPrecision ACTIVATED");
 
-if (!$response || !$response.body) {
-  $done({});
-  return;
+let isFiring = false;
+let lockThreshold = 0.985;
+let target = null;
+
+function getHeadPosition(tgt) {
+  return getBonePosition(tgt, 8);
 }
 
-let body = $response.body;
-
-try {
-  let data = JSON.parse(body);
-
-  const HEAD_BONE_INDEX = 8; // chỉ số xương đầu
-
-  function getVectorToHead(target) {
-    const head = getBonePosition(target, HEAD_BONE_INDEX);
-    return {
-      x: head.x - player.position.x,
-      y: head.y - player.position.y,
-      z: head.z - player.position.z
-    };
-  }
-
-  function normalizeVector(vec) {
-    const length = Math.sqrt(vec.x ** 2 + vec.y ** 2 + vec.z ** 2);
-    return { x: vec.x / length, y: vec.y / length, z: vec.z / length };
-  }
-
-  function isHeadInCrosshair(target) {
-    const head = getBonePosition(target, HEAD_BONE_INDEX);
-    return getCrosshairArea().contains(head);
-  }
-
-  data.enemies?.forEach(enemy => {
-    if (!enemy.visible || !enemy.alive) return;
-
-    let magnetForce = 1.0;
-    const distance = getDistance(player.position, enemy.position);
-
-    if (["MP40", "M1014", "Vector"].includes(enemy.weapon)) magnetForce = 1.35;
-    else if (distance < 10) magnetForce = 1.45;
-    else magnetForce = 1.25;
-
-    // Ghim đầu bằng vector tuyệt đối
-    let vectorToHead = getVectorToHead(enemy);
-    let aimVector = normalizeVector(vectorToHead);
-
-    player.aimDirection = {
-      x: aimVector.x * magnetForce,
-      y: aimVector.y * magnetForce,
-      z: aimVector.z * magnetForce
-    };
-
-    // Auto Corrective Snap mỗi frame
-    if (!isHeadInCrosshair(enemy)) {
-      player.viewAngle = getAngleTo(enemy, HEAD_BONE_INDEX);
-    }
-
-    // Auto redirect đạn khi sắp bắn
-    if (player.isFiring && data.bullets) {
-      data.bullets.forEach(b => {
-        if (b.owner === player.id) {
-          let redirect = normalizeVector(getVectorToHead(enemy));
-          b.direction = {
-            x: redirect.x + Math.random() * 0.001,
-            y: redirect.y + Math.random() * 0.001,
-            z: redirect.z + Math.random() * 0.001
-          };
-        }
-      });
-    }
-
-    // Auto bắn nếu trúng đầu
-    if (isHeadInCrosshair(enemy)) {
-      player.fireWeapon();
-    }
-
-    // Né nếu tâm địch hướng vào đầu mình
-    const enemyAim = getVectorToHead(player, enemy);
-    const incomingAngle = getAngleBetween(enemy.viewDirection, enemyAim);
-    if (incomingAngle < 5) {
-      player.dodge(Vector.opposite(enemy.viewDirection), 3); // né về phía ngược hướng địch
-    }
-  });
-
-  body = JSON.stringify(data);
-} catch (err) {
-  console.log("[ERR] AutoHeadlockProMax v4.0:", err);
+function distance3D(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 }
 
-$done({ body });
+function normalize(vec) {
+  let mag = Math.sqrt(vec.x ** 2 + vec.y ** 2 + vec.z ** 2);
+  return { x: vec.x / mag, y: vec.y / mag, z: vec.z / mag };
+}
+
+function aimAt(headPos, myPos) {
+  const dir = normalize({ x: headPos.x - myPos.x, y: headPos.y - myPos.y, z: headPos.z - myPos.z });
+  moveCrosshair(dir);
+}
+
+function stickyAimAdjust(target) {
+  const predicted = predictMovement(target);
+  aimAt(predicted, getPlayerPosition());
+}
+
+function predictMovement(target) {
+  const head = getHeadPosition(target);
+  const vel = target.velocity || { x: 0, y: 0, z: 0 };
+  const predictionFactor = 0.08;
+  return {
+    x: head.x + vel.x * predictionFactor,
+    y: head.y + vel.y * predictionFactor,
+    z: head.z + vel.z * predictionFactor
+  };
+}
+
+function isLockedOn(target) {
+  const head = getHeadPosition(target);
+  return isCrosshairNear(head, lockThreshold);
+}
+
+function fireBurst(count = 5, delay = 45) {
+  isFiring = true;
+  let shotsLeft = count;
+
+  function nextShot() {
+    if (shotsLeft <= 0) {
+      isFiring = false;
+      return;
+    }
+    fire();
+    shotsLeft--;
+    setTimeout(nextShot, delay);
+  }
+
+  nextShot();
+}
+
+function dodgeLockIfAimed() {
+  const enemies = getNearbyEnemies();
+  for (const enemy of enemies) {
+    if (enemy.isAimingAtMe) {
+      const dir = Math.random() > 0.5 ? "left" : "right";
+      dodge(dir);
+    }
+  }
+}
+
+function gameLoop() {
+  target = findBestTarget();
+  if (!target) return;
+
+  stickyAimAdjust(target);
+
+  if (isLockedOn(target) && !isFiring) {
+    fire();
+    fireBurst(5); // Bắn thêm 5 viên ngay lập tức
+  }
+
+  dodgeLockIfAimed();
+}
+
+setInterval(gameLoop, 16);
