@@ -1,126 +1,97 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v3.9-GigaGodMode
-// @version      3.9
-// @description  Ghim đầu siêu cấp: né tâm địch, AI lock khẩn cấp, bắn ngay, hỗ trợ đa tia như MP40
+// @name         AutoHeadlockProMax v4.0 GigaGodMode
+// @version      4.0
+// @description  Ghim đầu địch toàn diện với AI nâng cấp: hút đầu tuyệt đối, redirect đạn, tự bắn, tránh tâm địch, lock tốc độ cao
 // ==/UserScript==
 
-console.log("🧠 AutoHeadlockProMax v3.9-GigaGodMode ACTIVATED");
+console.log("🎯 AutoHeadlockProMax v4.0 GigaGodMode Activated");
 
-const HEAD_BONE_INDEX = 8;
-let headPos = { x: 0, y: 0, z: 0 };
-let enemyLastPos = null;
-let evasionCooldown = 0;
-
-function getDistance(p1, p2) {
-  return Math.sqrt(
-    (p1.x - p2.x) ** 2 +
-    (p1.y - p2.y) ** 2 +
-    (p1.z - p2.z) ** 2
-  );
+if (!$response || !$response.body) {
+  $done({});
+  return;
 }
 
-function predictHead(target) {
-  if (!target || typeof getBonePosition !== 'function') return null;
+let body = $response.body;
 
-  const currPos = getBonePosition(target, HEAD_BONE_INDEX);
-  if (!enemyLastPos) {
-    enemyLastPos = { ...currPos };
-    return currPos;
+try {
+  let data = JSON.parse(body);
+
+  const HEAD_BONE_INDEX = 8; // chỉ số xương đầu
+
+  function getVectorToHead(target) {
+    const head = getBonePosition(target, HEAD_BONE_INDEX);
+    return {
+      x: head.x - player.position.x,
+      y: head.y - player.position.y,
+      z: head.z - player.position.z
+    };
   }
 
-  const dx = currPos.x - enemyLastPos.x;
-  const dy = currPos.y - enemyLastPos.y;
-  const dz = currPos.z - enemyLastPos.z;
+  function normalizeVector(vec) {
+    const length = Math.sqrt(vec.x ** 2 + vec.y ** 2 + vec.z ** 2);
+    return { x: vec.x / length, y: vec.y / length, z: vec.z / length };
+  }
 
-  enemyLastPos = { ...currPos };
+  function isHeadInCrosshair(target) {
+    const head = getBonePosition(target, HEAD_BONE_INDEX);
+    return getCrosshairArea().contains(head);
+  }
 
-  return {
-    x: currPos.x + dx * 1.3,  // predictive multiplier
-    y: currPos.y + dy * 1.3,
-    z: currPos.z + dz * 1.3,
-  };
-}
+  data.enemies?.forEach(enemy => {
+    if (!enemy.visible || !enemy.alive) return;
 
-function evadeEnemyAim(myPos, enemies) {
-  for (const enemy of enemies) {
-    if (!enemy.isAiming || !enemy.weapon) continue;
+    let magnetForce = 1.0;
+    const distance = getDistance(player.position, enemy.position);
 
-    const aimVector = enemy.getAimVector();
-    const myHead = getBonePosition("player", HEAD_BONE_INDEX);
-    const dot = Math.abs(
-      aimVector.x * (myHead.x - enemy.x) +
-      aimVector.y * (myHead.y - enemy.y) +
-      aimVector.z * (myHead.z - enemy.z)
-    );
+    if (["MP40", "M1014", "Vector"].includes(enemy.weapon)) magnetForce = 1.35;
+    else if (distance < 10) magnetForce = 1.45;
+    else magnetForce = 1.25;
 
-    if (dot < 1.2) {
-      evasionCooldown = 30; // evade for next 30 frames
-      return {
-        x: myPos.x + Math.random() * 1.5 - 0.75,
-        y: myPos.y,
-        z: myPos.z + Math.random() * 1.5 - 0.75
-      };
+    // Ghim đầu bằng vector tuyệt đối
+    let vectorToHead = getVectorToHead(enemy);
+    let aimVector = normalizeVector(vectorToHead);
+
+    player.aimDirection = {
+      x: aimVector.x * magnetForce,
+      y: aimVector.y * magnetForce,
+      z: aimVector.z * magnetForce
+    };
+
+    // Auto Corrective Snap mỗi frame
+    if (!isHeadInCrosshair(enemy)) {
+      player.viewAngle = getAngleTo(enemy, HEAD_BONE_INDEX);
     }
-  }
 
-  return null;
-}
-
-function simulateHumanDrag(current, target, smooth = 0.3) {
-  return {
-    x: current.x + (target.x - current.x) * smooth,
-    y: current.y + (target.y - current.y) * smooth
-  };
-}
-
-function lockAndShoot(enemies, myPos, crosshair) {
-  let target = null;
-  let minDistance = Infinity;
-
-  for (const enemy of enemies) {
-    if (!enemy.isAlive || !enemy.visible) continue;
-    const dist = getDistance(myPos, enemy);
-    if (dist < minDistance) {
-      minDistance = dist;
-      target = enemy;
+    // Auto redirect đạn khi sắp bắn
+    if (player.isFiring && data.bullets) {
+      data.bullets.forEach(b => {
+        if (b.owner === player.id) {
+          let redirect = normalizeVector(getVectorToHead(enemy));
+          b.direction = {
+            x: redirect.x + Math.random() * 0.001,
+            y: redirect.y + Math.random() * 0.001,
+            z: redirect.z + Math.random() * 0.001
+          };
+        }
+      });
     }
-  }
 
-  if (!target) return;
-
-  const predictedHead = predictHead(target);
-  if (!predictedHead) return;
-
-  // Evade enemy aim
-  if (evasionCooldown > 0) {
-    evasionCooldown--;
-    const evadePos = evadeEnemyAim(myPos, enemies);
-    if (evadePos) {
-      movePlayerTo(evadePos); // giả lập tránh né lock
+    // Auto bắn nếu trúng đầu
+    if (isHeadInCrosshair(enemy)) {
+      player.fireWeapon();
     }
-  }
 
-  // Aim simulation
-  const aimPos = simulateHumanDrag(crosshair, {
-    x: predictedHead.x,
-    y: predictedHead.y
-  }, 0.45);
+    // Né nếu tâm địch hướng vào đầu mình
+    const enemyAim = getVectorToHead(player, enemy);
+    const incomingAngle = getAngleBetween(enemy.viewDirection, enemyAim);
+    if (incomingAngle < 5) {
+      player.dodge(Vector.opposite(enemy.viewDirection), 3); // né về phía ngược hướng địch
+    }
+  });
 
-  moveCrosshairTo(aimPos); // ghim từ từ như người thật
-
-  // Auto fire nếu đã gần chính xác
-  const threshold = 1.0;
-  if (Math.abs(aimPos.x - predictedHead.x) < threshold &&
-      Math.abs(aimPos.y - predictedHead.y) < threshold) {
-    shootNow(); // bắn liền khi tâm đã gần head
-  }
+  body = JSON.stringify(data);
+} catch (err) {
+  console.log("[ERR] AutoHeadlockProMax v4.0:", err);
 }
 
-// Tích hợp vào tick game
-game.on('tick', () => {
-  const enemies = getEnemies();
-  const myPos = getPlayerPosition();
-  const crosshair = getCrosshairPosition();
-
-  lockAndShoot(enemies, myPos, crosshair);
-});
+$done({ body });
