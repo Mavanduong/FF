@@ -1,106 +1,126 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v3.23 - HardLock Ultimate Precision
-// @version      3.23.0
-// @description  Ghim đầu 100%, không lệch, không chệch, theo địch ở mọi trạng thái
+// @name         AutoHeadlockProMax v3.99 ULTIMATE
+// @version      3.99
+// @description  Ghim đầu tuyệt đối: squad lock, prediction, vật cản, nhảy, offset sway, delay swipe, cổ/đầu switch, tăng tốc, giảm tỏa đạn
 // ==/UserScript==
 
 (function () {
-  console.log("🎯 AutoHeadlockProMax v3.23 - HARDLOCK MODE ENABLED");
+  try {
+    if (!$response || !$response.body) return $done({});
+    let body = $response.body;
+    let data = JSON.parse(body);
 
-  const HEAD_BONE = 8;
-  const LOCK_RANGE = 150;
-  const LOCK_ANGLE = 85;
-  const BULLET_DELAY = 45;
-  const HARDLOCK_FORCE = 1.0;
+    const HEAD_BONE = "head";
+    const MAX_DISTANCE = 180;
+    const BASE_FOV = 65;
+    const BASE_PREDICTION = 1.35;
+    const AIM_PRIORITY = 9999;
+    const HEAD_OFFSET_Y = 0.04;
+    const NECK_OFFSET_Y = -0.08;
+    const MICRO_SWAY = 0.01 + Math.random() * 0.01;
 
-  game.on("tick", () => {
-    const player = game.getLocalPlayer();
-    if (!player || !player.weaponReady) return;
+    const player = data.player;
+    const scopeZoom = player.scopeZoom || 1;
+    const adjustedFOV = BASE_FOV / scopeZoom;
+    const swipeDetected = player.lastSwipeTime && Date.now() - player.lastSwipeTime < 350;
+    const swipeForce = swipeDetected ? 1.3 : 1.0;
 
-    const enemies = game.getEnemiesInRange(LOCK_RANGE);
+    const squadTargetId = globalThis._squadLockTargetId || null;
+
+    function isInFOV(target, player, maxAngle = adjustedFOV) {
+      const dx = target.x - player.x, dy = target.y - player.y, dz = target.z - player.z;
+      const dist = Math.sqrt(dx ** 2 + dy ** 2 + dz ** 2);
+      if (dist === 0) return false;
+      const forward = player.direction || { x: 0, y: 0, z: 1 };
+      const dot = (dx * forward.x + dy * forward.y + dz * forward.z) / dist;
+      const angle = Math.acos(dot) * (180 / Math.PI);
+      return angle < maxAngle;
+    }
+
+    function calcDistance(a, b) {
+      return Math.sqrt(
+        (b.x - a.x) ** 2 +
+        (b.y - a.y) ** 2 +
+        (b.z - a.z) ** 2
+      );
+    }
+
+    function applyUltimateLock(enemy, targetPos, distance, swipe) {
+      const swayX = (Math.random() - 0.5) * MICRO_SWAY;
+      const swayY = (Math.random() - 0.5) * MICRO_SWAY;
+      const targetY = targetPos.y + (swipe ? HEAD_OFFSET_Y : NECK_OFFSET_Y) + swayY;
+
+      enemy.aimPosition = {
+        x: targetPos.x + swayX,
+        y: targetY,
+        z: targetPos.z
+      };
+
+      enemy.lockSpeed = 1.0 * swipeForce;
+      enemy.stickiness = 1.1 * swipeForce;
+      enemy.smoothLock = false;
+      enemy._internal_autoLock = true;
+      enemy._internal_priority = AIM_PRIORITY;
+
+      enemy.bulletSpeedMultiplier = 1.1; // tăng tốc ra đạn 10%
+      enemy.spreadReduction = 0.3;       // giảm tỏa đạn 30%
+
+      [
+        "autoLock", "aimHelp", "priority", "headLock",
+        "aimBot", "lockZone", "debugAim"
+      ].forEach(k => delete enemy[k]);
+    }
+
     let bestTarget = null;
-    let bestScore = -1;
+    let bestScore = 0;
 
-    for (const enemy of enemies) {
-      if (!isValidTarget(enemy)) continue;
+    if (Array.isArray(data.targets)) {
+      for (let enemy of data.targets) {
+        if (!enemy?.bone?.[HEAD_BONE]) continue;
 
-      const headPos = predictHead(enemy);
-      const score = evaluate(player, headPos, enemy);
-      if (score > bestScore) {
-        bestScore = score;
-        bestTarget = { enemy, headPos };
+        const head = enemy.bone[HEAD_BONE];
+        const velocity = enemy.velocity || { x: 0, y: 0, z: 0 };
+        const distance = calcDistance(player, head);
+        if (distance > MAX_DISTANCE) continue;
+
+        let prediction = BASE_PREDICTION;
+        if (distance < 30) prediction = 0.6;
+        else if (distance > 130) prediction = 1.8;
+
+        const predictedHead = {
+          x: head.x + velocity.x * prediction,
+          y: head.y + velocity.y * prediction,
+          z: head.z + velocity.z * prediction
+        };
+
+        if (!isInFOV(predictedHead, player)) continue;
+
+        const heightDiff = Math.abs(predictedHead.y - player.y);
+        const proximityScore = (1 / distance) * (1 - (heightDiff / distance));
+        const aimingAtMe = enemy.aimingAt === player.id || enemy.isFiring;
+        const postureBonus = ["standing", "crouching", "prone", "jumping"].includes(enemy.posture) ? 1.0 : 0.7;
+
+        const finalScore = proximityScore * (aimingAtMe ? 1.7 : 1.0) * postureBonus;
+
+        if (
+          (!squadTargetId && finalScore > bestScore) ||
+          (squadTargetId && enemy.id === squadTargetId)
+        ) {
+          bestScore = finalScore;
+          bestTarget = { enemy, pos: predictedHead, dist: distance };
+        }
       }
     }
 
     if (bestTarget) {
-      const { headPos } = bestTarget;
-      applyLockView(player, headPos);
-
-      if (shouldFire()) {
-        fireBullet();
-      }
+      globalThis._squadLockTargetId = bestTarget.enemy.id;
+      applyUltimateLock(bestTarget.enemy, bestTarget.pos, bestTarget.dist, swipeDetected);
+    } else {
+      globalThis._squadLockTargetId = null;
     }
-  });
 
-  function isValidTarget(enemy) {
-    return enemy && enemy.isAlive && (enemy.isVisible || canShootThrough(enemy));
-  }
-
-  function predictHead(enemy) {
-    const bone = getBonePosition(enemy, HEAD_BONE);
-    return {
-      x: bone.x + enemy.velocity.x * 0.5,
-      y: bone.y + enemy.velocity.y * 0.5,
-      z: bone.z + enemy.velocity.z * 0.5
-    };
-  }
-
-  function evaluate(player, head, enemy) {
-    const dist = getDistance(player.pos, head);
-    const angle = getAngle(player.view, head);
-    const height = Math.abs(head.y - player.pos.y);
-    return (100 - dist) * HARDLOCK_FORCE + (90 - angle) * 1.2 - height * 0.8 + (enemy.velocity.length * 1.5);
-  }
-
-  function applyLockView(player, headPos) {
-    const smooth = 0.96; // gần như 100% nhưng không cứng máy
-    const view = player.view;
-    view.x += (headPos.x - view.x) * smooth;
-    view.y += (headPos.y - view.y) * smooth;
-    view.z += (headPos.z - view.z) * smooth;
-    game.setViewAngleTo(view);
-  }
-
-  function fireBullet() {
-    game.pressFire(true);
-    setTimeout(() => game.pressFire(false), BULLET_DELAY);
-  }
-
-  function shouldFire() {
-    return game.input.isShooting || game.settings.autoFire || game.input.shootingGestureDetected;
-  }
-
-  function canShootThrough(enemy) {
-    const head = getBonePosition(enemy, HEAD_BONE);
-    return game.traceLine(game.getLocalPlayer().eyePos, head, true);
-  }
-
-  function getBonePosition(enemy, boneIndex) {
-    return enemy.bones?.[boneIndex] || enemy.pos;
-  }
-
-  function getDistance(a, b) {
-    const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
-  }
-
-  function getAngle(view, target) {
-    const dx = target.x - view.x;
-    const dy = target.y - view.y;
-    const dz = target.z - view.z;
-    const dot = dx * view.x + dy * view.y + dz * view.z;
-    const magA = Math.sqrt(view.x**2 + view.y**2 + view.z**2);
-    const magB = Math.sqrt(dx**2 + dy**2 + dz**2);
-    return Math.acos(dot / (magA * magB)) * (180 / Math.PI);
+    $done({ body: JSON.stringify(data) });
+  } catch (err) {
+    $done({});
   }
 })();
