@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v3.21 - Ghim 100% Không Né
-// @version      3.21
-// @description  Ghim đầu 100%, không che giấu, không sway, vuốt hay không đều lock cứng
+// @name         AutoHeadlockProMax v3.22 - Ghim Đầu Cực Mạnh
+// @version      3.22
+// @description  Lock đầu tuyệt đối, không trượt, không sway, ghim như keo
 // ==/UserScript==
 
 (function () {
@@ -11,80 +11,75 @@
     let data = JSON.parse(body);
 
     const HEAD_BONE = "head";
-    const MAX_DISTANCE = 150;
-    const AIM_PRIORITY = 99999;
-    const LOCK_SPEED = 1.5;
-    const STICKINESS = 1.5;
-    const HEAD_OFFSET_Y = 0.04;
-    const PREDICTION_BASE = 1.2;
+    const MAX_DISTANCE = 180;
+    const SUPER_PRIORITY = 999999;
+    const ULTRA_LOCK_SPEED = 2.0;
+    const ULTRA_STICKINESS = 2.0;
+    const HEAD_OFFSET_Y = 0.045;
+    const BASE_PREDICTION_TIME = 1.5;
 
     const player = data.player || {};
     const squadTargetId = globalThis._squadLockTargetId || null;
 
-    function distance(a, b) {
+    function dist(a, b) {
       const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
       return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    function isValidTarget(enemy) {
-      return enemy && enemy.bone && enemy.bone[HEAD_BONE] && !enemy.obstacleBetween;
-    }
-
-    function predictHead(head, velocity, predictionTime) {
+    function predict(pos, velocity, t) {
       return {
-        x: head.x + velocity.x * predictionTime,
-        y: head.y + velocity.y * predictionTime,
-        z: head.z + velocity.z * predictionTime
+        x: pos.x + velocity.x * t,
+        y: pos.y + velocity.y * t,
+        z: pos.z + velocity.z * t
       };
     }
 
-    function applyAbsoluteLock(enemy, head) {
+    function applyUltraLock(enemy, headPos) {
       enemy.aimPosition = {
-        x: head.x,
-        y: head.y + HEAD_OFFSET_Y,
-        z: head.z
+        x: headPos.x,
+        y: headPos.y + HEAD_OFFSET_Y,
+        z: headPos.z
       };
-      enemy.lockSpeed = LOCK_SPEED;
-      enemy.stickiness = STICKINESS;
+      enemy.lockSpeed = ULTRA_LOCK_SPEED;
+      enemy.stickiness = ULTRA_STICKINESS;
       enemy.smoothLock = false;
       enemy._internal_autoLock = true;
-      enemy._internal_priority = AIM_PRIORITY;
+      enemy._internal_priority = SUPER_PRIORITY;
 
-      // Dọn sạch mọi thứ không cần
       [
         "autoLock", "aimHelp", "priority", "headLock",
         "aimBot", "lockZone", "debugAim"
       ].forEach(k => delete enemy[k]);
     }
 
-    let best = null;
-    let highest = -Infinity;
+    let chosen = null;
+    let maxScore = -Infinity;
 
     if (Array.isArray(data.targets)) {
-      for (const enemy of data.targets) {
-        if (!isValidTarget(enemy)) continue;
-        const head = enemy.bone[HEAD_BONE];
-        const velocity = enemy.velocity || { x: 0, y: 0, z: 0 };
-        const dist = distance(player, head);
-        if (dist > MAX_DISTANCE) continue;
+      for (const e of data.targets) {
+        if (!e?.bone?.[HEAD_BONE] || e.obstacleBetween) continue;
+        const head = e.bone[HEAD_BONE];
+        const velocity = e.velocity || { x: 0, y: 0, z: 0 };
+        const d = dist(player, head);
+        if (d > MAX_DISTANCE) continue;
 
-        const predictionTime = dist > 100 ? 1.5 : dist < 30 ? 0.5 : PREDICTION_BASE;
-        const predicted = predictHead(head, velocity, predictionTime);
+        const t = BASE_PREDICTION_TIME * (d / 100);
+        const pred = predict(head, velocity, t);
 
-        const score = (1 / dist) * (enemy.aimingAt === player.id ? 1.5 : 1.0) * (enemy.isFiring ? 1.2 : 1.0);
+        const score = (1 / d) * (e.aimingAt === player.id ? 2.0 : 1.0) * (e.isFiring ? 1.3 : 1.0);
         if (
-          (!squadTargetId && score > highest) ||
-          (squadTargetId && enemy.id === squadTargetId)
+          (!squadTargetId && score > maxScore) ||
+          (squadTargetId && e.id === squadTargetId)
         ) {
-          highest = score;
-          best = { enemy, pos: predicted };
+          maxScore = score;
+          chosen = { enemy: e, pos: pred };
         }
       }
     }
 
-    if (best) {
-      globalThis._squadLockTargetId = best.enemy.id;
-      applyAbsoluteLock(best.enemy, best.pos);
+    if (chosen) {
+      globalThis._squadLockTargetId = chosen.enemy.id;
+      applyUltraLock(chosen.enemy, chosen.pos);
     } else {
       globalThis._squadLockTargetId = null;
     }
