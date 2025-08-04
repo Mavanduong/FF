@@ -1,132 +1,90 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v3.2 - Smart Swipe + Micro Sway
-// @version      3.2
-// @description  Vuốt dài lock mạnh, ghim đầu cổ ảo nhưng chính xác tuyệt đối, sway tự nhiên
+// @name         AutoHeadlockProMax v3.21 - Ghim 100% Không Né
+// @version      3.21
+// @description  Ghim đầu 100%, không che giấu, không sway, vuốt hay không đều lock cứng
 // ==/UserScript==
 
 (function () {
   try {
     if (!$response || !$response.body) return $done({});
-
     let body = $response.body;
     let data = JSON.parse(body);
 
     const HEAD_BONE = "head";
     const MAX_DISTANCE = 150;
-    const BASE_FOV = 55;
-    const BASE_PREDICTION = 1.2;
-    const AIM_PRIORITY = 9999;
+    const AIM_PRIORITY = 99999;
+    const LOCK_SPEED = 1.5;
+    const STICKINESS = 1.5;
     const HEAD_OFFSET_Y = 0.04;
-    const NECK_OFFSET_Y = -0.08;
+    const PREDICTION_BASE = 1.2;
 
-    const player = data.player;
-    const scopeZoom = player.scopeZoom || 1;
-    const adjustedFOV = BASE_FOV / scopeZoom;
-
-    const swipeDuration = player.swipeDuration || 0; // ms
-    const swipeDetected = swipeDuration > 50;
-    const longSwipe = swipeDuration >= 300;
-
+    const player = data.player || {};
     const squadTargetId = globalThis._squadLockTargetId || null;
 
-    function isInFOV(target, player, maxAngle = adjustedFOV) {
-      const dx = target.x - player.x, dy = target.y - player.y, dz = target.z - player.z;
-      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-      if (dist === 0) return false;
-      const forward = player.direction || { x: 0, y: 0, z: 1 };
-      const dot = (dx * forward.x + dy * forward.y + dz * forward.z) / dist;
-      const angle = Math.acos(dot) * (180 / Math.PI);
-      return angle < maxAngle;
-    }
-
-    function calcDistance(a, b) {
+    function distance(a, b) {
       const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
       return Math.sqrt(dx * dx + dy * dy + dz * dz);
     }
 
-    function randomMicroSway(pos, magnitude = 0.015) {
+    function isValidTarget(enemy) {
+      return enemy && enemy.bone && enemy.bone[HEAD_BONE] && !enemy.obstacleBetween;
+    }
+
+    function predictHead(head, velocity, predictionTime) {
       return {
-        x: pos.x + (Math.random() * 2 - 1) * magnitude,
-        y: pos.y + (Math.random() * 2 - 1) * magnitude,
-        z: pos.z + (Math.random() * 2 - 1) * magnitude
+        x: head.x + velocity.x * predictionTime,
+        y: head.y + velocity.y * predictionTime,
+        z: head.z + velocity.z * predictionTime
       };
     }
 
-    function applySmartLock(enemy, targetPos, distance, swipeDur) {
-      // Micro-sway simulation
-      const swayPos = randomMicroSway(targetPos);
-
-      // Lock strength
-      const lockSpeed = swipeDur >= 300 ? 1.0 : distance < 30 ? 0.9 : 0.75;
-      const stickiness = swipeDur >= 300 ? 1.2 : 0.85 + Math.random() * 0.15;
-
-      // Locking to adjusted bone
-      const yOffset = swipeDur ? HEAD_OFFSET_Y : NECK_OFFSET_Y;
-
+    function applyAbsoluteLock(enemy, head) {
       enemy.aimPosition = {
-        x: swayPos.x,
-        y: swayPos.y + yOffset,
-        z: swayPos.z
+        x: head.x,
+        y: head.y + HEAD_OFFSET_Y,
+        z: head.z
       };
-
-      enemy.lockSpeed = lockSpeed;
-      enemy.stickiness = stickiness;
+      enemy.lockSpeed = LOCK_SPEED;
+      enemy.stickiness = STICKINESS;
       enemy.smoothLock = false;
       enemy._internal_autoLock = true;
       enemy._internal_priority = AIM_PRIORITY;
 
-      // Anti-ban cleanup
+      // Dọn sạch mọi thứ không cần
       [
         "autoLock", "aimHelp", "priority", "headLock",
         "aimBot", "lockZone", "debugAim"
       ].forEach(k => delete enemy[k]);
     }
 
-    let bestTarget = null;
-    let bestScore = 0;
+    let best = null;
+    let highest = -Infinity;
 
     if (Array.isArray(data.targets)) {
-      for (let enemy of data.targets) {
-        if (!enemy?.bone?.[HEAD_BONE] || enemy.obstacleBetween) continue;
-
+      for (const enemy of data.targets) {
+        if (!isValidTarget(enemy)) continue;
         const head = enemy.bone[HEAD_BONE];
         const velocity = enemy.velocity || { x: 0, y: 0, z: 0 };
-        const distance = calcDistance(player, head);
-        if (distance > MAX_DISTANCE) continue;
+        const dist = distance(player, head);
+        if (dist > MAX_DISTANCE) continue;
 
-        let prediction = BASE_PREDICTION;
-        if (distance < 30) prediction = 0.6;
-        else if (distance > 100) prediction = 1.5;
+        const predictionTime = dist > 100 ? 1.5 : dist < 30 ? 0.5 : PREDICTION_BASE;
+        const predicted = predictHead(head, velocity, predictionTime);
 
-        const predictedHead = {
-          x: head.x + velocity.x * prediction,
-          y: head.y + velocity.y * prediction,
-          z: head.z + velocity.z * prediction
-        };
-
-        if (!isInFOV(predictedHead, player)) continue;
-
-        const heightDiff = Math.abs(predictedHead.y - player.y);
-        const heightRatio = heightDiff / distance;
-        const proximityScore = (1 / distance) * (1 - heightRatio);
-
-        const aimingAtMe = enemy.aimingAt === player.id || enemy.isFiring;
-        const postureBonus = ["standing", "crouching", "prone"].includes(enemy.posture) ? 1.0 : 0.8;
-        const finalScore = proximityScore * (aimingAtMe ? 1.5 : 1) * postureBonus;
-
+        const score = (1 / dist) * (enemy.aimingAt === player.id ? 1.5 : 1.0) * (enemy.isFiring ? 1.2 : 1.0);
         if (
-          (!squadTargetId && finalScore > bestScore) ||
+          (!squadTargetId && score > highest) ||
           (squadTargetId && enemy.id === squadTargetId)
         ) {
-          bestScore = finalScore;
-          bestTarget = { enemy, pos: predictedHead, dist: distance };
+          highest = score;
+          best = { enemy, pos: predicted };
         }
       }
     }
 
-    if (bestTarget) {
-      globalThis._squadLockTargetId = bestTarget.enemy.id;
-      applySmartLock(bestTarget.enemy, bestTarget.pos, bestTarget.dist, swipeDuration);
+    if (best) {
+      globalThis._squadLockTargetId = best.enemy.id;
+      applyAbsoluteLock(best.enemy, best.pos);
     } else {
       globalThis._squadLockTargetId = null;
     }
