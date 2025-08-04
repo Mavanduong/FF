@@ -1,94 +1,107 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v3.8
-// @version      3.8
-// @description  Ghim đầu cực mạnh, né hút thân, tránh bị địch ghim đầu, tối ưu tầm gần
+// @name         AutoHeadlockProMax v3.8-Final
+// @description  Ghim đầu đa chế độ, chống dính thân, tự bắn, né tâm địch
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v3.8 ACTIVATED");
+console.log("🎯 AutoHeadlockProMax v3.8 Final ACTIVATED");
 
 const HEAD_BONE_INDEX = 8;
-const OFFSET_Y_HEAD = 0.038;
-const OFFSET_Y_BODY = 0.01;
-const LOCK_FORCE = 3.5;
-const STICKY_FORCE = 2.0;
 const BURST = 5;
+const OFFSET_Y_HEAD = 0.018;
+const OFFSET_Y_BODY = 0.006;
+const LOCK_FORCE = 3.0;
+const STICKY_FORCE = 1.4;
 
-// ========== Anti-Ban SafeMode ==========
-let antiBanSafeMode = true;
-let emulateHumanBehavior = true;
+let fireCooldown = 0;
 
-// ========== Helper Function ==========
-function dist(a, b) {
-  const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
-  return Math.sqrt(dx*dx + dy*dy + dz*dz);
+function getBonePosition(entity, index = HEAD_BONE_INDEX) {
+  return typeof entity.getBonePos === 'function' ? entity.getBonePos(index) : { x: 0, y: 0, z: 0 };
 }
 
-// ========== Tính vị trí né nếu địch đang aim ==========
-function evadeAim(myPlayer, enemy) {
-  if (!enemy || !enemy.isAiming || !enemy.aimPosition) return null;
-
-  const deltaX = myPlayer.x - enemy.x;
-  const deltaZ = myPlayer.z - enemy.z;
-  const angle = Math.atan2(deltaZ, deltaX);
-
-  // Né sang bên 20cm và lùi nhẹ
-  const evadeOffset = 0.2;
-  return {
-    x: myPlayer.x + Math.cos(angle + Math.PI / 2) * evadeOffset,
-    y: myPlayer.y,
-    z: myPlayer.z + Math.sin(angle + Math.PI / 2) * evadeOffset
-  };
+function dist(p1, p2) {
+  const dx = p1.x - p2.x, dy = p1.y - p2.y, dz = p1.z - p2.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
 }
 
-// ========== Lock Target Main ==========
-function lockTarget(enemy, pos, i = 0, fakeAim = false, distToTarget = 30) {
-  const isCloseRange = distToTarget < 10;
-  const closeBoost = isCloseRange ? 1.0 : 0;
-  const extraOffset = isCloseRange ? 0.02 : 0;
-  const offsetY = fakeAim ? OFFSET_Y_BODY : OFFSET_Y_HEAD + extraOffset;
+function aimAtHead(enemy, index = 0, fakeAim = false) {
+  if (!enemy) return;
 
-  const force = i < BURST ? LOCK_FORCE + closeBoost : 2.0;
-  const stick = i < BURST ? STICKY_FORCE + (i * 0.2) : 1.2;
+  const headPos = getBonePosition(enemy, HEAD_BONE_INDEX);
+  const playerPos = getPlayerPosition();
+  const d = dist(playerPos, headPos);
+  const isClose = d < 10;
+
+  const offsetY = fakeAim ? OFFSET_Y_BODY : OFFSET_Y_HEAD + (isClose ? 0.02 : 0);
+  const force = index < BURST ? LOCK_FORCE + (isClose ? 1.2 : 0) : 1.6;
+  const sticky = index < BURST ? STICKY_FORCE : 1.1;
 
   enemy.aimPosition = {
-    x: pos.x,
-    y: pos.y + offsetY,
-    z: pos.z
+    x: headPos.x,
+    y: headPos.y + offsetY,
+    z: headPos.z
   };
 
   enemy.lockSpeed = force;
-  enemy.stickiness = stick;
-  enemy._internal_priority = 99999 - i;
+  enemy.stickiness = sticky;
+  enemy._internal_priority = 99999 - index;
+
+  // Auto-shoot logic
+  if (index === 0 && fireCooldown <= 0) {
+    shoot();
+    fireCooldown = 5;
+  }
 
   ["autoLock", "aimHelp", "priority", "aimBot", "headLock"].forEach(k => delete enemy[k]);
 }
 
-// ========== Tick ==========
-game.on('tick', () => {
-  const myPlayer = game.getMyPlayer();
-  if (!myPlayer || myPlayer.health <= 0) return;
+function getPlayerPosition() {
+  return typeof getSelfPos === 'function' ? getSelfPos() : { x: 0, y: 0, z: 0 };
+}
 
-  const enemies = game.getEnemies().filter(e => e.health > 0 && e.isVisible);
-  if (enemies.length === 0) return;
+function shoot() {
+  if (typeof pressButton === 'function') pressButton("fire");
+}
 
-  enemies.sort((a, b) => dist(myPlayer, a) - dist(myPlayer, b));
+function evadeEnemyAim(enemies) {
+  if (!enemies || enemies.length === 0) return;
+  const selfPos = getPlayerPosition();
 
-  const headPos = (enemy) => getBonePosition(enemy, HEAD_BONE_INDEX);
+  enemies.forEach(e => {
+    const pos = getBonePosition(e, HEAD_BONE_INDEX);
+    const angleToMe = Math.atan2(selfPos.y - pos.y, selfPos.x - pos.x);
+    const playerAngle = typeof getViewAngle === 'function' ? getViewAngle() : 0;
 
-  // Né nếu bị ngắm
-  for (const enemy of enemies) {
-    if (enemy.isAiming && dist(myPlayer, enemy) < 15) {
-      const evade = evadeAim(myPlayer, enemy);
-      if (evade) game.setMyPosition(evade); // dịch nhẹ
+    const diff = Math.abs(playerAngle - angleToMe);
+    if (diff < 0.2) {
+      // Họ đang dí tâm vào ta → tránh nhẹ về bên
+      const evadeX = selfPos.x + Math.random() * 0.2 - 0.1;
+      const evadeZ = selfPos.z + Math.random() * 0.2 - 0.1;
+      if (typeof moveTo === 'function') moveTo(evadeX, selfPos.y, evadeZ);
     }
-  }
+  });
+}
 
-  // Ghim đầu địch gần nhất
-  for (let i = 0; i < Math.min(3, enemies.length); i++) {
-    const enemy = enemies[i];
-    const head = headPos(enemy);
-    if (!head) continue;
-    const d = dist(myPlayer, head);
-    lockTarget(enemy, head, i, false, d);
-  }
+// Tick logic
+let lockIndex = 0;
+game.on("tick", () => {
+  const enemies = typeof getEnemies === 'function' ? getEnemies() : [];
+  if (!enemies || enemies.length === 0) return;
+
+  fireCooldown = Math.max(0, fireCooldown - 1);
+
+  // Né tâm địch
+  evadeEnemyAim(enemies);
+
+  // Ưu tiên gần và lộ đầu
+  enemies.sort((a, b) => {
+    const d1 = dist(getPlayerPosition(), getBonePosition(a));
+    const d2 = dist(getPlayerPosition(), getBonePosition(b));
+    return d1 - d2;
+  });
+
+  const mainEnemy = enemies[0];
+  if (!mainEnemy) return;
+
+  aimAtHead(mainEnemy, lockIndex++);
+  if (lockIndex > 99) lockIndex = 0;
 });
