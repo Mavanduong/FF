@@ -1,111 +1,94 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v3.3 – Ghim Xuyên Vật Thể
-// @version      3.3
-// @description  Ghim đầu bất chấp vật thể, nếu tâm hướng gần đúng
+// @name         AutoHeadlockProMax v3.21 Final
+// @version      3.21
+// @description  Ghim 100% đầu bất chấp: jump, chạy, obstacle, sway, vuốt dài lock mạnh
 // ==/UserScript==
 
 (function () {
   try {
     if (!$response || !$response.body) return $done({});
-    let body = $response.body;
-    let data = JSON.parse(body);
+    let data = JSON.parse($response.body);
 
-    const HEAD_BONE = "head";
-    const MAX_DISTANCE = 180;
-    const PENETRATE_ZONE = 50; // cho xuyên nếu dưới 50m
-    const LOCK_FORCE = 2.2;
-    const STICKY_FORCE = 2.0;
-    const HEAD_OFFSET_Y = 0.042;
+    const HEAD = "head", MAX_DIST = 180, BASE_FOV = 55, AIM_POWER = 1.2;
+    const HEAD_Y_OFFSET = 0.04, NECK_Y_OFFSET = -0.08;
+    const SWAY_MAGNITUDE = 0.015;
+    const player = data.player;
+    const fov = BASE_FOV / (player.scopeZoom || 1);
+    const swipe = player.lastSwipeTime && Date.now() - player.lastSwipeTime < 400;
+    const squadLockId = globalThis._squadTargetId || null;
 
-    const player = data.player || {};
-    const squadTargetId = globalThis._squadLockTargetId || null;
+    const calcDist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
 
-    function distance(a, b) {
-      const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
-      return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    function inFOV(target, player, maxFOV = fov) {
+      const dx = target.x - player.x, dy = target.y - player.y, dz = target.z - player.z;
+      const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      const forward = player.direction || { x: 0, y: 0, z: 1 };
+      const dot = (dx * forward.x + dy * forward.y + dz * forward.z) / dist;
+      const angle = Math.acos(dot) * (180 / Math.PI);
+      return angle < maxFOV;
     }
 
-    function directionSimilarity(a, b) {
-      const magA = Math.sqrt(a.x*a.x + a.y*a.y + a.z*a.z);
-      const magB = Math.sqrt(b.x*b.x + b.y*b.y + b.z*b.z);
-      const dot = (a.x*b.x + a.y*b.y + a.z*b.z) / (magA * magB + 0.0001);
-      return dot;
-    }
+    function applyLock(enemy, head, dist, isSwipe) {
+      const offsetY = isSwipe ? HEAD_Y_OFFSET : NECK_Y_OFFSET;
+      const swayX = (Math.random() - 0.5) * SWAY_MAGNITUDE * 2;
+      const swayY = (Math.random() - 0.5) * SWAY_MAGNITUDE * 2;
+      const swayZ = (Math.random() - 0.5) * SWAY_MAGNITUDE * 2;
+      const distanceFactor = dist < 40 ? 1.2 : dist < 80 ? 1.0 : 0.85;
+      const lockIntensity = swipe ? 1.3 : 0.95;
 
-    function predict(pos, vel, time) {
-      return {
-        x: pos.x + vel.x * time,
-        y: pos.y + vel.y * time,
-        z: pos.z + vel.z * time
-      };
-    }
-
-    function isInLineOfSight(player, head, aim) {
-      const toTarget = {
-        x: head.x - player.x,
-        y: head.y - player.y,
-        z: head.z - player.z
-      };
-      return directionSimilarity(toTarget, aim) > 0.96;
-    }
-
-    function forceLock(enemy, pos) {
       enemy.aimPosition = {
-        x: pos.x,
-        y: pos.y + HEAD_OFFSET_Y,
-        z: pos.z
+        x: head.x + swayX,
+        y: head.y + offsetY + swayY,
+        z: head.z + swayZ
       };
-      enemy.lockSpeed = LOCK_FORCE;
-      enemy.stickiness = STICKY_FORCE;
-      enemy.smoothLock = false;
+      enemy.lockSpeed = AIM_POWER * distanceFactor;
+      enemy.stickiness = lockIntensity;
       enemy._internal_autoLock = true;
-      enemy._internal_priority = 999999;
+      enemy._internal_priority = 999;
+      enemy.smoothLock = false;
 
-      ["autoLock", "aimHelp", "priority", "aimBot", "lockZone", "headLock"].forEach(k => delete enemy[k]);
+      ["autoLock", "aimBot", "priority", "lockZone", "debugAim"].forEach(k => delete enemy[k]);
     }
 
-    let chosen = null;
-    let bestScore = -Infinity;
+    let best = null, bestScore = 0;
 
     if (Array.isArray(data.targets)) {
-      for (const e of data.targets) {
-        const head = e?.bone?.[HEAD_BONE];
-        if (!head) continue;
+      for (let t of data.targets) {
+        if (!t?.bone?.[HEAD]) continue;
 
-        const vel = e.velocity || { x: 0, y: 0, z: 0 };
-        const dist = distance(player, head);
-        if (dist > MAX_DISTANCE) continue;
+        const h = t.bone[HEAD], v = t.velocity || { x: 0, y: 0, z: 0 };
+        const dist = calcDist(player, h); if (dist > MAX_DIST) continue;
 
-        const predictTime = 1.2 * (dist / 100);
-        const predicted = predict(head, vel, predictTime);
+        let prediction = dist < 30 ? 0.6 : dist > 100 ? 1.5 : 1.0;
+        const predicted = { x: h.x + v.x * prediction, y: h.y + v.y * prediction, z: h.z + v.z * prediction };
 
-        const alignCheck = isInLineOfSight(player, predicted, data.viewVector || {x:0,y:0,z:1});
+        const visible = inFOV(predicted, player);
+        const obstacleInSight = t.obstacleBetween && !t.inCrosshair;
 
-        const canBypass = alignCheck && dist < PENETRATE_ZONE;
+        if (!visible || obstacleInSight) continue;
 
-        const isTargetValid = !e.obstacleBetween || canBypass || squadTargetId === e.id;
+        const yDiff = Math.abs(predicted.y - player.y);
+        const score = (1 / dist) * (1 - yDiff / dist) * (t.isFiring || t.aimingAt === player.id ? 1.3 : 1.0);
 
-        if (isTargetValid) {
-          const score = (1 / dist) * (e.isFiring ? 1.5 : 1.0) * (alignCheck ? 2 : 1);
-          if (score > bestScore) {
-            bestScore = score;
-            chosen = { enemy: e, pos: predicted };
-          }
+        if (!squadLockId && score > bestScore) {
+          best = { target: t, head: predicted, dist };
+          bestScore = score;
+        } else if (squadLockId && t.id === squadLockId) {
+          best = { target: t, head: predicted, dist };
+          break;
         }
       }
     }
 
-    if (chosen) {
-      globalThis._squadLockTargetId = chosen.enemy.id;
-      forceLock(chosen.enemy, chosen.pos);
+    if (best) {
+      globalThis._squadTargetId = best.target.id;
+      applyLock(best.target, best.head, best.dist, swipe);
     } else {
-      globalThis._squadLockTargetId = null;
+      globalThis._squadTargetId = null;
     }
 
     $done({ body: JSON.stringify(data) });
-
-  } catch (err) {
+  } catch (e) {
     $done({});
   }
 })();
-
