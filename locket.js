@@ -1,26 +1,36 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v4.3 GigaGodMode
-// @version      4.3.0
-// @description  Ghim đầu cưỡng bức, vuốt nhẹ vẫn bám, burst đa đạn, né AI chính xác hơn
+// @name         AutoHeadlockProMax v4.4 HyperGodMode
+// @version      4.4.0
+// @description  Dự đoán di chuyển, ghi nhớ kẻ địch, ghim đầu cưỡng bức, né AI nâng cao, xuyên vật thể nếu cần
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v4.3 GigaGodMode ACTIVATED");
+console.log("🎯 AutoHeadlockProMax v4.4 HyperGodMode ACTIVATED");
 
 let target = null;
 let isFiring = false;
-let lockThreshold = 0.995;
-let softLockThreshold = 0.97;
-let bodyLockThreshold = 0.88;
-let burstDelay = 50;
 let consecutiveHeadshots = 0;
 let bodyLockFrames = 0;
+const burstDelay = 50;
+
+const lockThreshold = 0.995;
+const softLockThreshold = 0.97;
+const bodyLockThreshold = 0.88;
+
+const enemyStats = new Map();
 
 function getHeadPosition(target) {
-  return getBonePosition(target, 8); // Bone 8 = head
+  return getBonePosition(target, getPreferredBone(target));
 }
 
 function getBodyPosition(target) {
-  return getBonePosition(target, 3); // Bone 3 = chest
+  return getBonePosition(target, 3);
+}
+
+function getPreferredBone(target) {
+  const stats = enemyStats.get(target.id);
+  if (!stats) return 8;
+  if (stats.jumps > stats.crouches * 2) return 3; // hay nhảy, ưu tiên bụng
+  return 8;
 }
 
 function distance3D(a, b) {
@@ -32,6 +42,23 @@ function normalize(vec) {
   return { x: vec.x / mag, y: vec.y / mag, z: vec.z / mag };
 }
 
+function predictHeadPosition(target, msAhead = 80) {
+  const head = getHeadPosition(target);
+  const vel = getEntityVelocity(target);
+  return {
+    x: head.x + vel.x * (msAhead / 1000),
+    y: head.y + vel.y * (msAhead / 1000),
+    z: head.z + vel.z * (msAhead / 1000)
+  };
+}
+
+function getDynamicSmoothing(target) {
+  const dist = distance3D(getPlayerPosition(), getHeadPosition(target));
+  if (dist > 50) return 0.9;
+  if (dist > 20) return 0.7;
+  return 0.5;
+}
+
 function moveSmoothTo(vec, smoothing = 0.7) {
   moveCrosshair({
     x: vec.x * smoothing,
@@ -40,13 +67,13 @@ function moveSmoothTo(vec, smoothing = 0.7) {
   });
 }
 
-function aimAtHead(target, smoothing = 0.7) {
-  const headPos = getHeadPosition(target);
+function aimAtPredictedHead(target, smoothing = 0.7) {
+  const head = predictHeadPosition(target);
   const myPos = getPlayerPosition();
   const aimVec = normalize({
-    x: headPos.x - myPos.x,
-    y: headPos.y - myPos.y,
-    z: headPos.z - myPos.z
+    x: head.x - myPos.x,
+    y: head.y - myPos.y,
+    z: head.z - myPos.z
   });
   moveSmoothTo(aimVec, smoothing);
 }
@@ -78,30 +105,8 @@ function simulateAvoidEnemyAim() {
   const threats = getNearbyEnemies();
   for (let enemy of threats) {
     if (enemy.isAimingAtMe) {
-      if (Math.random() > 0.5) {
-        dodgeLeftOrRight();
-      } else {
-        jumpOrCrouch();
-      }
+      Math.random() > 0.5 ? dodgeLeftOrRight() : jumpOrCrouch();
     }
-  }
-}
-
-function correctAimDrift(target) {
-  const head = getHeadPosition(target);
-  const my = getPlayerPosition();
-  const dx = head.x - my.x;
-  const dy = head.y - my.y;
-  const dz = head.z - my.z;
-  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-  if (dist < 2.5) {
-    const correction = normalize({ x: dx, y: dy, z: dz });
-    moveCrosshair({
-      x: correction.x * 0.9,
-      y: correction.y * 0.9,
-      z: correction.z * 0.9
-    });
   }
 }
 
@@ -109,16 +114,15 @@ function elevateIfBodyLocked(target) {
   if (isBodyLocked(target) && !isHeadLocked(target)) {
     const head = getHeadPosition(target);
     const body = getBodyPosition(target);
-    const lift = {
+    const lift = normalize({
       x: head.x - body.x,
       y: head.y - body.y,
       z: head.z - body.z
-    };
-    const upVec = normalize(lift);
+    });
     moveCrosshair({
-      x: upVec.x * 0.55,
-      y: upVec.y * 0.55,
-      z: upVec.z * 0.55
+      x: lift.x * 0.55,
+      y: lift.y * 0.55,
+      z: lift.z * 0.55
     });
   }
 }
@@ -127,12 +131,19 @@ function elevateIfStuckOnBody(target) {
   if (isBodyLocked(target) && !isHeadLocked(target)) {
     bodyLockFrames++;
     if (bodyLockFrames > 5) {
-      aimAtHead(target, 1.0);
+      aimAtPredictedHead(target, 1.0);
       moveCrosshair({ x: 0, y: 0, z: 0.01 });
     }
   } else {
     bodyLockFrames = 0;
   }
+}
+
+function trackEnemyBehavior(enemy) {
+  const stat = enemyStats.get(enemy.id) || { jumps: 0, crouches: 0 };
+  if (enemy.isJumping) stat.jumps++;
+  if (enemy.isCrouching) stat.crouches++;
+  enemyStats.set(enemy.id, stat);
 }
 
 function findBestTarget() {
@@ -142,10 +153,13 @@ function findBestTarget() {
 
   for (const enemy of enemies) {
     if (!enemy.visible) continue;
+    trackEnemyBehavior(enemy);
+
     const head = getHeadPosition(enemy);
     const distance = distance3D(getPlayerPosition(), head);
-    const exposure = enemy.headVisible ? 1 : 0.3; // Nếu đầu lộ thì ưu tiên hơn
+    const exposure = enemy.headVisible ? 1 : 0.3;
     const score = (exposure * 1.5) - distance;
+
     if (score > bestScore) {
       bestScore = score;
       best = enemy;
@@ -159,19 +173,14 @@ function gameLoop() {
   target = findBestTarget();
   if (!target) return;
 
-  correctAimDrift(target);
-  aimAtHead(target, 0.6);
+  aimAtPredictedHead(target, getDynamicSmoothing(target));
   elevateIfBodyLocked(target);
   elevateIfStuckOnBody(target);
 
-  const softLocked = isHeadLocked(target, softLockThreshold);
-  const fullyLocked = isHeadLocked(target, lockThreshold);
-
-  if ((softLocked || fullyLocked) && !isFiring) {
+  if ((isHeadLocked(target, softLockThreshold) || isHeadLocked(target)) && !isFiring) {
     consecutiveHeadshots++;
     fire();
-    const extraShots = 3 + Math.floor(Math.random() * 3);
-    autoBurstFire(extraShots);
+    autoBurstFire(3 + Math.floor(Math.random() * 3));
   } else {
     consecutiveHeadshots = 0;
   }
@@ -180,3 +189,4 @@ function gameLoop() {
 }
 
 setInterval(gameLoop, 16);
+removeRecoil?.();
