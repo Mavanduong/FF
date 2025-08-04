@@ -1,25 +1,26 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v4.2.2 GigaGodMode
-// @version      4.2.2
-// @description  Dính người tự kéo lên đầu, vuốt nhẹ vẫn ghim, né AI, burst đa đạn
+// @name         AutoHeadlockProMax v4.3 GigaGodMode
+// @version      4.3.0
+// @description  Ghim đầu cưỡng bức, vuốt nhẹ vẫn bám, burst đa đạn, né AI chính xác hơn
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v4.2.2 GigaGodMode ACTIVATED");
+console.log("🎯 AutoHeadlockProMax v4.3 GigaGodMode ACTIVATED");
 
 let target = null;
 let isFiring = false;
-let lockThreshold = 0.985;
-let softLockThreshold = 0.93;
-let bodyLockThreshold = 0.88; // Khi tâm đang dính người
+let lockThreshold = 0.995;
+let softLockThreshold = 0.97;
+let bodyLockThreshold = 0.88;
 let burstDelay = 50;
 let consecutiveHeadshots = 0;
+let bodyLockFrames = 0;
 
 function getHeadPosition(target) {
-  return getBonePosition(target, 8); // bone 8 = head
+  return getBonePosition(target, 8); // Bone 8 = head
 }
 
 function getBodyPosition(target) {
-  return getBonePosition(target, 3); // bone 3 = ngực/bụng
+  return getBonePosition(target, 3); // Bone 3 = chest
 }
 
 function distance3D(a, b) {
@@ -92,8 +93,16 @@ function correctAimDrift(target) {
   const dx = head.x - my.x;
   const dy = head.y - my.y;
   const dz = head.z - my.z;
-  const correction = normalize({ x: dx * 1.05, y: dy * 1.05, z: dz * 1.02 });
-  moveCrosshair(correction);
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+  if (dist < 2.5) {
+    const correction = normalize({ x: dx, y: dy, z: dz });
+    moveCrosshair({
+      x: correction.x * 0.9,
+      y: correction.y * 0.9,
+      z: correction.z * 0.9
+    });
+  }
 }
 
 function elevateIfBodyLocked(target) {
@@ -101,13 +110,49 @@ function elevateIfBodyLocked(target) {
     const head = getHeadPosition(target);
     const body = getBodyPosition(target);
     const lift = {
-      x: (head.x - body.x),
-      y: (head.y - body.y),
-      z: (head.z - body.z)
+      x: head.x - body.x,
+      y: head.y - body.y,
+      z: head.z - body.z
     };
     const upVec = normalize(lift);
-    moveCrosshair({ x: upVec.x * 0.4, y: upVec.y * 0.4, z: upVec.z * 0.4 }); // Kéo lên nhẹ
+    moveCrosshair({
+      x: upVec.x * 0.55,
+      y: upVec.y * 0.55,
+      z: upVec.z * 0.55
+    });
   }
+}
+
+function elevateIfStuckOnBody(target) {
+  if (isBodyLocked(target) && !isHeadLocked(target)) {
+    bodyLockFrames++;
+    if (bodyLockFrames > 5) {
+      aimAtHead(target, 1.0);
+      moveCrosshair({ x: 0, y: 0, z: 0.01 });
+    }
+  } else {
+    bodyLockFrames = 0;
+  }
+}
+
+function findBestTarget() {
+  const enemies = getNearbyEnemies();
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const enemy of enemies) {
+    if (!enemy.visible) continue;
+    const head = getHeadPosition(enemy);
+    const distance = distance3D(getPlayerPosition(), head);
+    const exposure = enemy.headVisible ? 1 : 0.3; // Nếu đầu lộ thì ưu tiên hơn
+    const score = (exposure * 1.5) - distance;
+    if (score > bestScore) {
+      bestScore = score;
+      best = enemy;
+    }
+  }
+
+  return best;
 }
 
 function gameLoop() {
@@ -115,9 +160,9 @@ function gameLoop() {
   if (!target) return;
 
   correctAimDrift(target);
-  aimAtHead(target, 0.6); // Hỗ trợ nhẹ
-
-  elevateIfBodyLocked(target); // <== Tâm dính người, tự kéo lên đầu
+  aimAtHead(target, 0.6);
+  elevateIfBodyLocked(target);
+  elevateIfStuckOnBody(target);
 
   const softLocked = isHeadLocked(target, softLockThreshold);
   const fullyLocked = isHeadLocked(target, lockThreshold);
