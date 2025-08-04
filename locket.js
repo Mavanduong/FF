@@ -1,82 +1,126 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v3.8-Ultimate
-// @description  Ghim đầu 100%, tránh bị dí đầu, tự bắn khi lock, boost lực gần
+// @name         AutoHeadlockProMax v3.9-GigaGodMode
+// @version      3.9
+// @description  Ghim đầu siêu cấp: né tâm địch, AI lock khẩn cấp, bắn ngay, hỗ trợ đa tia như MP40
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v3.8-Ultimate ACTIVATED");
+console.log("🧠 AutoHeadlockProMax v3.9-GigaGodMode ACTIVATED");
 
-if (!$response || !$response.body) {
-  $done({});
-  return;
+const HEAD_BONE_INDEX = 8;
+let headPos = { x: 0, y: 0, z: 0 };
+let enemyLastPos = null;
+let evasionCooldown = 0;
+
+function getDistance(p1, p2) {
+  return Math.sqrt(
+    (p1.x - p2.x) ** 2 +
+    (p1.y - p2.y) ** 2 +
+    (p1.z - p2.z) ** 2
+  );
 }
 
-let body = $response.body;
+function predictHead(target) {
+  if (!target || typeof getBonePosition !== 'function') return null;
 
-try {
-  let data = JSON.parse(body);
+  const currPos = getBonePosition(target, HEAD_BONE_INDEX);
+  if (!enemyLastPos) {
+    enemyLastPos = { ...currPos };
+    return currPos;
+  }
 
-  const HEAD_BONE = 8;
-  const OFFSET_Y_HEAD = 0.022;
-  const OFFSET_Y_BODY = 0.005;
-  const LOCK_FORCE = 3.2;
-  const STICKY_FORCE = 2.6;
-  const BURST = 5;
+  const dx = currPos.x - enemyLastPos.x;
+  const dy = currPos.y - enemyLastPos.y;
+  const dz = currPos.z - enemyLastPos.z;
 
-  const dist = (a, b) => Math.sqrt((a.x-b.x)**2 + (a.y-b.y)**2 + (a.z-b.z)**2);
+  enemyLastPos = { ...currPos };
 
-  function lockTarget(enemy, pos, i = 0, fakeAim = false, player) {
-    const distToTarget = dist(player, pos);
-    const isCloseRange = distToTarget < 10;
+  return {
+    x: currPos.x + dx * 1.3,  // predictive multiplier
+    y: currPos.y + dy * 1.3,
+    z: currPos.z + dz * 1.3,
+  };
+}
 
-    const antiMagnetBoost = isCloseRange ? 0.02 : 0;
-    const evadeOffset = avoidHeadGhim(player, enemy) ? 0.015 : 0;
-    const offsetY = fakeAim ? OFFSET_Y_BODY : OFFSET_Y_HEAD + antiMagnetBoost + evadeOffset;
+function evadeEnemyAim(myPos, enemies) {
+  for (const enemy of enemies) {
+    if (!enemy.isAiming || !enemy.weapon) continue;
 
-    const force = i < BURST ? LOCK_FORCE + (isCloseRange ? 1.2 : 0) : 1.8;
-    const stick = i < BURST ? STICKY_FORCE : 1.5;
+    const aimVector = enemy.getAimVector();
+    const myHead = getBonePosition("player", HEAD_BONE_INDEX);
+    const dot = Math.abs(
+      aimVector.x * (myHead.x - enemy.x) +
+      aimVector.y * (myHead.y - enemy.y) +
+      aimVector.z * (myHead.z - enemy.z)
+    );
 
-    enemy.aimPosition = {
-      x: pos.x,
-      y: pos.y + offsetY,
-      z: pos.z
-    };
-
-    enemy.lockSpeed = force;
-    enemy.stickiness = stick;
-    enemy._internal_priority = 99999 - i;
-
-    ["autoLock", "aimHelp", "priority", "aimBot", "headLock"].forEach(k => delete enemy[k]);
-
-    // ✅ Tự bắn sau khi lock nếu gần và ghim chính xác
-    if (isCloseRange && i === 0) {
-      if (typeof fireWeapon === 'function') {
-        setTimeout(() => fireWeapon(), 10); // delay 10ms sau khi ghim để auto fire
-      }
+    if (dot < 1.2) {
+      evasionCooldown = 30; // evade for next 30 frames
+      return {
+        x: myPos.x + Math.random() * 1.5 - 0.75,
+        y: myPos.y,
+        z: myPos.z + Math.random() * 1.5 - 0.75
+      };
     }
   }
 
-  // 🚫 Né địch đang ghim đầu mình
-  function avoidHeadGhim(player, enemy) {
-    const lookingAt = enemy?.lookAt || {};
-    const aimAtMe = dist(lookingAt, player) < 0.5;
-    return aimAtMe;
-  }
-
-  if (data?.players && data?.me) {
-    const enemies = data.players.filter(p => p.team !== data.me.team && p.alive);
-
-    enemies.forEach((enemy, i) => {
-      const bone = enemy?.bones?.[HEAD_BONE];
-      if (!bone) return;
-
-      // Lock từng enemy
-      lockTarget(enemy, bone, i, false, data.me);
-    });
-  }
-
-  body = JSON.stringify(data);
-} catch (e) {
-  console.log("⚠️ AutoHeadlock Error:", e);
+  return null;
 }
 
-$done({ body });
+function simulateHumanDrag(current, target, smooth = 0.3) {
+  return {
+    x: current.x + (target.x - current.x) * smooth,
+    y: current.y + (target.y - current.y) * smooth
+  };
+}
+
+function lockAndShoot(enemies, myPos, crosshair) {
+  let target = null;
+  let minDistance = Infinity;
+
+  for (const enemy of enemies) {
+    if (!enemy.isAlive || !enemy.visible) continue;
+    const dist = getDistance(myPos, enemy);
+    if (dist < minDistance) {
+      minDistance = dist;
+      target = enemy;
+    }
+  }
+
+  if (!target) return;
+
+  const predictedHead = predictHead(target);
+  if (!predictedHead) return;
+
+  // Evade enemy aim
+  if (evasionCooldown > 0) {
+    evasionCooldown--;
+    const evadePos = evadeEnemyAim(myPos, enemies);
+    if (evadePos) {
+      movePlayerTo(evadePos); // giả lập tránh né lock
+    }
+  }
+
+  // Aim simulation
+  const aimPos = simulateHumanDrag(crosshair, {
+    x: predictedHead.x,
+    y: predictedHead.y
+  }, 0.45);
+
+  moveCrosshairTo(aimPos); // ghim từ từ như người thật
+
+  // Auto fire nếu đã gần chính xác
+  const threshold = 1.0;
+  if (Math.abs(aimPos.x - predictedHead.x) < threshold &&
+      Math.abs(aimPos.y - predictedHead.y) < threshold) {
+    shootNow(); // bắn liền khi tâm đã gần head
+  }
+}
+
+// Tích hợp vào tick game
+game.on('tick', () => {
+  const enemies = getEnemies();
+  const myPos = getPlayerPosition();
+  const crosshair = getCrosshairPosition();
+
+  lockAndShoot(enemies, myPos, crosshair);
+});
