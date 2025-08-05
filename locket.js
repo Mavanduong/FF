@@ -1,35 +1,32 @@
 // ==UserScript==
-// @name         Shadowrocket Headlock
+// @name         📦 Shadowrocket API Logger
 // @version      1.0.0
-// @description  Ghim đầu tự động bằng cách thay bodyPosition = headPosition trong API enemy
+// @description  Ghi log response JSON từ API game để tìm thông tin ghim đầu
+// @match        *://*/*
+// @script-response-body
 // ==/UserScript==
 
-if (!$response || !$response.body) {
-  console.log("❌ Không có response body, bỏ qua");
-  $done({});
-  return;
-}
-
 try {
-  const body = $response.body;
-  const obj = JSON.parse(body);
-
-  if (obj.enemies && Array.isArray(obj.enemies)) {
-    obj.enemies = obj.enemies.map(enemy => {
-      if (enemy.headPosition && enemy.bodyPosition) {
-        enemy.bodyPosition = { ...enemy.headPosition }; // Ghim body về đầu
-        enemy.aimTarget = { ...enemy.headPosition };     // Nếu game có sử dụng aimTarget riêng
-      }
-      return enemy;
-    });
-
-    console.log(`✅ Đã ghim đầu ${obj.enemies.length} enemy`);
-  } else {
-    console.log("⚠️ Không thấy enemies trong response");
+  if (!$response || !$response.body) {
+    $done({});
+    return;
   }
 
-  $done({ body: JSON.stringify(obj) });
-} catch (e) {
-  console.log("❌ Lỗi xử lý headlock:", e);
+  const url = $request.url;
+  const contentType = $response.headers["Content-Type"] || "";
+
+  if (contentType.includes("application/json")) {
+    const json = JSON.parse($response.body);
+
+    // ⚠️ Bạn có thể lọc URL cụ thể nếu cần
+    if (url.includes("/enemy") || url.includes("/match") || url.includes("/fire") || url.includes("/player")) {
+      console.log("📦 [API LOG] URL:", url);
+      console.log("📄 JSON:", JSON.stringify(json, null, 2));
+    }
+  }
+
+  $done({});
+} catch (err) {
+  console.log("❌ Script Error:", err);
   $done({});
 }
