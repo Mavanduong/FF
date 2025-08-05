@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         FixRecoil v3.0 ProMovement GigaStealth
-// @version      3.0
-// @description  Chống giật nâng cao: siêu ổn định cả khi nhảy, chạy nhanh, hoặc nhắm bắn liên tục. Giga mode - tránh phát hiện
+// @name         FixRecoil v3.5 UltraPro GigaStealth
+// @version      3.5
+// @description  Chống giật tối thượng: mượt, ổn định đa địa hình, hành vi thông minh, tăng FPS và phản hồi cực nhanh trong game FPS
 // ==/UserScript==
 
 (function () {
@@ -10,11 +10,13 @@
     let body = $response.body;
     let data = JSON.parse(body);
 
-    if (data?.weaponStats && data?.player) {
+    if (data?.weaponStats && data?.player && data?.system) {
       const velocity = data.player?.velocity?.magnitude || 0;
       const isJumping = data.player?.posture === "jumping";
       const isAiming = data.player?.isAiming || false;
-      const stabilityBoost = isAiming ? 1.2 : 1.0;
+      const fpsBaseBoost = (data.system.fps || 60) >= 90 ? 1.1 : 1.0; // Ưu tiên xử lý nhanh khi FPS cao
+      const stabilityBoost = isAiming ? 1.25 : 1.0;
+      const movementFactor = isJumping ? 1.35 : (velocity > 3 ? 1.15 : 1.0);
 
       for (let weapon of data.weaponStats) {
         weapon._backup = {
@@ -27,25 +29,20 @@
           stability: weapon.stability,
         };
 
-        // Hệ số động theo hành vi
-        let recoilMod = 1.0;
-        if (isJumping) recoilMod = 1.25;
-        else if (velocity > 3) recoilMod = 1.1;
+        const randomizer = () => (Math.random() * 0.016 - 0.008); // Nhẹ hơn để vẫn giống người dùng thật
 
-        const randomizer = () => (Math.random() * 0.02 - 0.01); // tạo cảm giác người thật
+        // Tối ưu từng chỉ số dựa vào hành vi
+        weapon.recoil = Math.max(0.10, 0.15 / movementFactor) + randomizer();
+        weapon.verticalRecoil = Math.max(0.13, 0.18 / movementFactor) + randomizer();
+        weapon.horizontalRecoil = Math.max(0.11, 0.17 / movementFactor) + randomizer();
+        weapon.shake = 0.058 + randomizer();
+        weapon.spread = 0.0075 + randomizer();
 
-        // Tăng cường chống giật có điều chỉnh thông minh
-        weapon.recoil = Math.max(0.12, 0.18 / recoilMod) + randomizer();
-        weapon.verticalRecoil = Math.max(0.15, 0.22 / recoilMod) + randomizer();
-        weapon.horizontalRecoil = Math.max(0.12, 0.2 / recoilMod) + randomizer();
-        weapon.shake = 0.065 + randomizer();
-        weapon.spread = 0.0085 + randomizer();
+        // Tăng hồi phục và độ ổn định, điều chỉnh theo FPS và trạng thái nhắm
+        weapon.recoilRecovery = 190 + Math.random() * 15 * fpsBaseBoost;
+        weapon.stability = (140 + Math.random() * 10) * stabilityBoost * fpsBaseBoost;
 
-        weapon.recoilRecovery = 170 + Math.random() * 20;
-        weapon.stability = (130 + Math.random() * 15) * stabilityBoost;
-
-        // Ẩn mọi dấu vết kỹ thuật
-        delete weapon._backup;
+        delete weapon._backup; // Gỡ dấu vết kỹ thuật để stealth tuyệt đối
       }
     }
 
@@ -53,7 +50,7 @@
     $done({ body });
 
   } catch (err) {
-    console.error("FixRecoil Error:", err);
+    console.error("🔥 FixRecoil Error:", err);
     $done({});
   }
 })();
