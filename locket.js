@@ -1,23 +1,23 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v5.1.0 Gentle Swipe Lock
-// @version      5.1.0
-// @description  Ghim đầu khi có vuốt nhẹ lúc giữ chuột. Không tự bắn, không lock liên tục. An toàn và chính xác.
+// @name         AutoHeadlockProMax v5.2.0 Vuốt Là Chết™
+// @version      5.2.0
+// @description  Vuốt nhẹ 1 cái là ghim đầu tới chết. Không tự bắn, không tự lock khi không vuốt. An toàn, chính xác, đáng sợ.
 // ==/UserScript==
 
-console.log("🔥 AutoHeadlockProMax v5.1.0 Gentle Swipe Lock ACTIVATED");
+console.log("🔥 AutoHeadlockProMax v5.2.0 Vuốt Là Chết™ ACTIVATED");
 
 let isTriggerHeld = false;
 let target = null;
 let bodyLockFrames = 0;
 let lastCrosshair = null;
 let swipeDetected = false;
+let lockEngaged = false;
 
 const lockThreshold = 0.998;
-const softLockThreshold = 0.985;
 const bodyLockThreshold = 0.88;
 const smoothingClose = 0.12;
 const smoothingFar = 0.25;
-const swipeThreshold = 0.0015; // nhạy cỡ nào với vuốt nhẹ
+const swipeThreshold = 0.0015; // độ nhạy vuốt (thấp = nhạy hơn)
 
 function getHeadPosition(target) {
   return getBonePosition(target, 8);
@@ -139,24 +139,37 @@ function detectSwipe() {
   return movement > swipeThreshold;
 }
 
-// Trigger control
+// Khi giữ chuột trái
 function onFireKeyDown() {
   isTriggerHeld = true;
 }
 
+// Khi thả chuột trái
 function onFireKeyUp() {
   isTriggerHeld = false;
   swipeDetected = false;
+  lockEngaged = false;
   lastCrosshair = null;
 }
 
-// Core loop
+// Vòng lặp chính
 function gameLoop() {
-  if (!isTriggerHeld) return;
+  if (!isTriggerHeld) {
+    lockEngaged = false;
+    return;
+  }
 
-  swipeDetected = detectSwipe();
-  if (!swipeDetected) return;
+  // Vuốt nhẹ = bật chế độ ghim
+  if (!lockEngaged) {
+    swipeDetected = detectSwipe();
+    if (swipeDetected) {
+      lockEngaged = true;
+    } else {
+      return;
+    }
+  }
 
+  // Nếu đã vuốt => ghim liên tục cho tới khi thả chuột
   target = findBestVisibleTarget();
   if (!target) return;
 
@@ -166,8 +179,8 @@ function gameLoop() {
 
 setInterval(gameLoop, 16);
 
-// Gắn nút chuột trái làm trigger
+// Gắn trigger chuột trái
 bindFireKey(onFireKeyDown, onFireKeyUp);
 
-// Giảm giật nếu hỗ trợ
+// Gỡ giật nếu có hỗ trợ
 removeRecoil?.();
