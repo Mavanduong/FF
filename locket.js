@@ -1,37 +1,30 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v4.4 HyperGodMode
-// @version      4.4.1
-// @description  Dự đoán di chuyển, ghi nhớ kẻ địch, ghim đầu cưỡng bức, né AI nâng cao, xuyên vật thể nếu cần + Sound ESP Tracking
+// @name         AutoHeadlockProMax v4.5.0 UltraHeadForce
+// @version      4.5.0
+// @description  Ghim đầu cực mạnh, auto burst nhanh, né AI, phản ứng âm thanh, xuyên vật thể. 100% kéo là dính đầu.
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v4.4.1 HyperGodMode + SoundESP ACTIVATED");
+console.log("🔥 AutoHeadlockProMax v4.5.0 UltraHeadForce ACTIVATED");
 
 let target = null;
 let isFiring = false;
 let consecutiveHeadshots = 0;
 let bodyLockFrames = 0;
-const burstDelay = 50;
+const burstDelay = 30;
 
-const lockThreshold = 0.995;
-const softLockThreshold = 0.97;
+const lockThreshold = 0.999;
+const softLockThreshold = 0.985;
 const bodyLockThreshold = 0.88;
 
 const enemyStats = new Map();
 let soundTargets = [];
 
 function getHeadPosition(target) {
-  return getBonePosition(target, getPreferredBone(target));
+  return getBonePosition(target, 8); // luôn lấy head
 }
 
 function getBodyPosition(target) {
   return getBonePosition(target, 3);
-}
-
-function getPreferredBone(target) {
-  const stats = enemyStats.get(target.id);
-  if (!stats) return 8;
-  if (stats.jumps > stats.crouches * 2) return 3;
-  return 8;
 }
 
 function distance3D(a, b) {
@@ -55,16 +48,16 @@ function predictHeadPosition(target, msAhead = 80) {
 
 function getDynamicSmoothing(target) {
   const dist = distance3D(getPlayerPosition(), getHeadPosition(target));
-  if (dist > 50) return 0.9;
-  if (dist > 20) return 0.7;
-  return 0.5;
+  if (dist > 50) return 0.8;
+  if (dist > 20) return 0.5;
+  return 0.3; // aim cực gắt khi gần
 }
 
-function moveSmoothTo(vec, smoothing = 0.7) {
+function moveSmoothTo(vec, smoothing = 0.5) {
   moveCrosshair({
-    x: vec.x * smoothing,
-    y: vec.y * smoothing,
-    z: vec.z * smoothing
+    x: vec.x * (1 - smoothing),
+    y: vec.y * (1 - smoothing),
+    z: vec.z * (1 - smoothing)
   });
 }
 
@@ -77,11 +70,8 @@ function aimAtPredictedHead(target, smoothing = 0.5) {
     z: head.z - myPos.z
   });
 
-  if (soundTargets.length && distance3D(head, soundTargets[0].pos) < 5) {
-    smoothing = 0.3;
-  }
-
-  moveSmoothTo(aimVec, smoothing);
+  const near = isCrosshairNear(head, 0.98);
+  moveSmoothTo(aimVec, near ? 0.1 : smoothing); // nếu gần → aim cực gắt
 }
 
 function isHeadLocked(target, threshold = lockThreshold) {
@@ -126,9 +116,9 @@ function elevateIfBodyLocked(target) {
       z: head.z - body.z
     });
     moveCrosshair({
-      x: lift.x * 0.55,
-      y: lift.y * 0.55,
-      z: lift.z * 0.55
+      x: lift.x * 0.9,
+      y: lift.y * 0.9,
+      z: lift.z * 0.9
     });
   }
 }
