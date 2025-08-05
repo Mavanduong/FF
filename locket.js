@@ -65,7 +65,7 @@ function triggerSmartBurst(target) {
     game.setCrosshairPosition(aimPos);
 
     if (isInHeadZone(aimPos, predictedHead)) {
-      console.log(`🎯 Viên #${shot + 1} đã ghim vào đầu`);
+      console.log(`🎯 Viên #${shot + 10} đã ghim vào đầu`);
       // game.fire(); // bỏ comment nếu có hỗ trợ bắn
     }
 
