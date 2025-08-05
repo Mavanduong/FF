@@ -1,22 +1,22 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v6.0 – HeadOnly KillLock Edition
-// @version      6.0
-// @description  Ghim 100% đầu, bỏ qua thân, không lệch, bắn chính xác từng viên vào tọa độ đầu
+// @name         AutoHeadlockProMax v7.0 – GodLevel InstaLock Aimbot
+// @version      7.0
+// @description  Ghim đầu như hack – không lệch – auto re-aim từng viên
 // ==/UserScript==
 
 const aimConfig = {
-  headLockSpeed: 2.2,
-  headRadius: 0.3,
-  predictionFactor: 0.45,
-  lockUntilDeath: true,
-  wallCheckEnabled: true,
+  speed: 3.5,
+  headRadius: 0.28,
+  predictionFactor: 0.5,
+  burstCount: 10,
+  burstDelay: 18, // Siêu nhanh nhưng không bị anti-cheat
+  lockUntilDead: true,
   autoFire: true,
-  fireBurstCount: 5,
-  burstDelay: 25 // ms
+  wallCheck: true
 };
 
-let burstTimer = null;
 let isLocked = false;
+let burstTimer = null;
 
 function getDistance(a, b) {
   const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
@@ -32,70 +32,82 @@ function predictHead(enemy) {
   };
 }
 
-function aimDirect(crosshair, head) {
-  return {
-    x: crosshair.x + (head.x - crosshair.x) * aimConfig.headLockSpeed,
-    y: crosshair.y + (head.y - crosshair.y) * aimConfig.headLockSpeed,
-    z: crosshair.z + (head.z - crosshair.z) * aimConfig.headLockSpeed
-  };
-}
-
-function isInHeadZone(crosshair, head) {
+function isInHead(crosshair, head) {
   return getDistance(crosshair, head) <= aimConfig.headRadius;
 }
 
-function isVisible(head) {
-  if (!aimConfig.wallCheckEnabled) return true;
-  return !game.raycastObstructed(head);
+function aimHardLock(targetHead) {
+  return {
+    x: targetHead.x,
+    y: targetHead.y,
+    z: targetHead.z
+  };
 }
 
-function triggerBurstFire() {
+function isVisible(targetHead) {
+  if (!aimConfig.wallCheck) return true;
+  return !game.raycastObstructed(targetHead);
+}
+
+function triggerAutoBurst(target) {
   if (burstTimer) clearInterval(burstTimer);
-  let count = 0;
+  let shots = 0;
+
   burstTimer = setInterval(() => {
-    if (count >= aimConfig.fireBurstCount) {
+    if (shots >= aimConfig.burstCount) {
       clearInterval(burstTimer);
       return;
     }
-    console.log("🔫 Viên #" + (count + 1) + " bắn vào đầu");
-    // game.fire(); // bật nếu bạn có hàm fire
-    count++;
+
+    const crosshair = game.getCrosshairPosition();
+    const head = predictHead(target);
+    const aimPos = aimHardLock(head);
+    game.setCrosshairPosition(aimPos);
+
+    if (isInHead(crosshair, head)) {
+      console.log(`💥 Găm viên #${shots + 1} vào đầu`);
+      // game.fire(); // bật nếu hỗ trợ
+    }
+
+    shots++;
   }, aimConfig.burstDelay);
 }
 
-function getBestTarget(enemies, crosshair) {
-  let best = null;
-  let minDist = Infinity;
-  for (const enemy of enemies) {
-    if (!enemy.head || !enemy.visible) continue;
-    const predicted = predictHead(enemy);
-    if (!isVisible(predicted)) continue;
+function getTarget(enemies, crosshair) {
+  let closest = null;
+  let closestDist = Infinity;
 
-    const dist = getDistance(crosshair, predicted);
-    if (dist < minDist) {
-      minDist = dist;
-      best = enemy;
+  for (let e of enemies) {
+    if (!e.head || !e.visible) continue;
+    const head = predictHead(e);
+    if (!isVisible(head)) continue;
+
+    const dist = getDistance(crosshair, head);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closest = e;
     }
   }
-  return best;
+
+  return closest;
 }
 
 game.on("tick", () => {
-  const crosshair = game.getCrosshairPosition();
   const enemies = game.getVisibleEnemies();
-  const target = getBestTarget(enemies, crosshair);
+  const crosshair = game.getCrosshairPosition();
+  const target = getTarget(enemies, crosshair);
   if (!target) return;
 
-  const head = predictHead(target);
-  const newAim = aimDirect(crosshair, head);
-  game.setCrosshairPosition(newAim);
+  const predictedHead = predictHead(target);
+  const aimPos = aimHardLock(predictedHead);
+  game.setCrosshairPosition(aimPos);
 
-  if (aimConfig.lockUntilDeath && aimConfig.autoFire) {
-    if (isInHeadZone(newAim, head)) {
+  if (aimConfig.lockUntilDead && aimConfig.autoFire) {
+    if (isInHead(crosshair, predictedHead)) {
       if (!isLocked) {
         isLocked = true;
-        console.log("🎯 Đã ghim chính xác vào đầu – xả burst");
-        triggerBurstFire();
+        console.log("🎯 InstaLock – Bắt đầu bắn burst hack style");
+        triggerAutoBurst(target);
       }
     } else {
       isLocked = false;
