@@ -1,35 +1,50 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v5.0 – GodLock Edition
-// @version      5.0
-// @description  Ghim đầu cực nhanh – auto fire – điều chỉnh vuốt – dự đoán chuyển động
+// @name         AutoHeadlockProMax v5.5 – CombatAim+ Edition
+// @version      5.5
+// @description  Ghim đầu mạnh + auto fire + tính đạn tỏa + ưu tiên mục tiêu + né vật cản
 // ==/UserScript==
 
 const aimConfig = {
-  lockOnHeadForce: 1.0,            // Ghim full lực
-  aimSpeed: 1.0,                   // Ghim ngay
+  baseSpeed: 1.0,
+  minSpeedRatio: 0.7,
+  maxSpeedRatio: 1.6,
+  maxEffectiveDistance: 35,
+  headZoneRadius: 0.6,
+  swipeCorrectionRange: 1.2,
+  overPullTolerance: 0.25,
+  predictionFactor: 0.35,
   lockUntilDeath: true,
-  headZoneRadius: 0.55,           // Vùng đầu nhận diện
-  swipeCorrectionRange: 1.2,      // Nhận diện vuốt lỗi
-  overPullTolerance: 0.25,        // Dễ bắt swipe sai
-  predictionFactor: 0.45,         // Dự đoán chuyển động
+  wallCheckEnabled: true,
+  bulletSpreadSupport: true,
+  weaponSpread: 0.18 // độ lệch mỗi viên khi bắn tỏa
 };
 
 let isLocked = false;
 
-function isInHeadZone(crosshair, head) {
-  const dx = crosshair.x - head.x;
-  const dy = crosshair.y - head.y;
-  const dz = crosshair.z - head.z;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz) <= aimConfig.headZoneRadius;
+function getDistance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dz = a.z - b.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
+
+function getDynamicAimSpeed(crosshair, targetHead) {
+  const dist = getDistance(crosshair, targetHead);
+  const ratio = Math.min(Math.max(aimConfig.maxEffectiveDistance / dist, aimConfig.minSpeedRatio), aimConfig.maxSpeedRatio);
+  return aimConfig.baseSpeed * ratio;
 }
 
 function predictHead(enemy) {
-  const velocity = enemy.velocity || { x: 0, y: 0, z: 0 };
+  const v = enemy.velocity || { x: 0, y: 0, z: 0 };
   return {
-    x: enemy.head.x + velocity.x * aimConfig.predictionFactor,
-    y: enemy.head.y + velocity.y * aimConfig.predictionFactor,
-    z: enemy.head.z + velocity.z * aimConfig.predictionFactor,
+    x: enemy.head.x + v.x * aimConfig.predictionFactor,
+    y: enemy.head.y + v.y * aimConfig.predictionFactor,
+    z: enemy.head.z + v.z * aimConfig.predictionFactor
   };
+}
+
+function isInHeadZone(crosshair, head) {
+  return getDistance(crosshair, head) <= aimConfig.headZoneRadius;
 }
 
 function correctSwipe(crosshair, targetHead, swipeDelta) {
@@ -37,30 +52,30 @@ function correctSwipe(crosshair, targetHead, swipeDelta) {
   const dy = targetHead.y - crosshair.y;
 
   if (Math.abs(dy) < aimConfig.swipeCorrectionRange) {
-    if (dy < -aimConfig.overPullTolerance) {
-      corrected.y += dy * 1.0; // vuốt vượt → kéo ngược về đầu
-    } else if (dy > aimConfig.headZoneRadius) {
-      corrected.y += dy * 1.0; // vuốt dưới → nâng nhanh
-    } else {
-      corrected = targetHead; // vuốt chính xác → dính thẳng
-    }
+    if (dy < -aimConfig.overPullTolerance) corrected.y += dy * 1.0;
+    else if (dy > aimConfig.headZoneRadius) corrected.y += dy * 1.0;
+    else corrected = targetHead;
   }
 
   return corrected;
 }
 
-function aimTo(target, current) {
+function aimTo(target, current, dynamicSpeed) {
   return {
-    x: target.x,
-    y: target.y,
-    z: target.z
+    x: current.x + (target.x - current.x) * dynamicSpeed,
+    y: current.y + (target.y - current.y) * dynamicSpeed,
+    z: current.z + (target.z - current.z) * dynamicSpeed
   };
 }
 
-function autoFireControl(crosshair, head) {
-  if (isInHeadZone(crosshair, head)) {
+function autoFireControl(crosshair, head, distance) {
+  const shouldFire = isInHeadZone(crosshair, head) || (
+    aimConfig.bulletSpreadSupport && simulateSpreadHit(crosshair, head, distance)
+  );
+
+  if (shouldFire) {
     if (!isLocked) {
-      console.log("🔒 Locked On Head – BẮN");
+      console.log("🔒 Locked - Bắn ngay");
       isLocked = true;
     }
     triggerFire();
@@ -69,25 +84,60 @@ function autoFireControl(crosshair, head) {
   }
 }
 
+function simulateSpreadHit(crosshair, head, distance) {
+  const spreadRadius = aimConfig.weaponSpread * distance;
+  return getDistance(crosshair, head) <= spreadRadius;
+}
+
 function triggerFire() {
   console.log("🔫 Bắn!!");
-  // game.fire(); ← thay bằng hàm bắn thực tế nếu có
+  // game.fire(); ← bật nếu có
+}
+
+function isVisible(target) {
+  if (!aimConfig.wallCheckEnabled) return true;
+  return !game.raycastObstructed(target); // Kiểm tra có vật cản giữa tâm và đầu
+}
+
+function getBestTarget(enemies, crosshair) {
+  let best = null;
+  let bestScore = Infinity;
+
+  for (let enemy of enemies) {
+    if (!enemy.head || !enemy.visible) continue;
+    if (!isVisible(enemy.head)) continue;
+
+    const dist = getDistance(crosshair, enemy.head);
+    const dangerFactor = enemy.aimingAtMe ? 0.5 : 1.0;
+    const hpFactor = enemy.hp < 30 ? 0.7 : 1.0;
+    const score = dist * dangerFactor * hpFactor;
+
+    if (score < bestScore) {
+      bestScore = score;
+      best = enemy;
+    }
+  }
+
+  return best;
 }
 
 game.on('tick', () => {
-  const enemy = game.getNearestVisibleEnemy();
-  if (!enemy || !enemy.head) return;
-
-  const predictedHead = predictHead(enemy);
+  const enemies = game.getVisibleEnemies();
   const crosshair = game.getCrosshairPosition();
-  const swipeDelta = game.getSwipeDelta();
 
+  const target = getBestTarget(enemies, crosshair);
+  if (!target) return;
+
+  const predictedHead = predictHead(target);
+  const swipeDelta = game.getSwipeDelta();
   const corrected = correctSwipe(crosshair, predictedHead, swipeDelta);
-  const newAim = aimTo(corrected, crosshair);
+  const dynamicSpeed = getDynamicAimSpeed(crosshair, corrected);
+  const newAim = aimTo(corrected, crosshair, dynamicSpeed);
 
   game.setCrosshairPosition(newAim);
 
   if (aimConfig.lockUntilDeath) {
-    autoFireControl(newAim, predictedHead);
+    const dist = getDistance(crosshair, predictedHead);
+    autoFireControl(newAim, predictedHead, dist);
   }
 });
