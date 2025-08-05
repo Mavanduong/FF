@@ -6,9 +6,9 @@
 
 console.log("🎯 AutoHeadlockProMax v4.3-GodSwipe ACTIVATED");
 
-const HEAD_OFFSET = { x: 0, y: -0.25 };  // vị trí đầu so với tâm địch
-const MAX_HEAD_DISTANCE = 0.5;          // sai số tối đa được phép khi ghim đầu
-const ADJUST_SPEED = 0.15;              // tốc độ kéo lại khi lệch
+const HEAD_OFFSET = { x: 0, y: -0.5 };  // vị trí đầu so với tâm địch
+const MAX_HEAD_DISTANCE = 0.1;          // sai số tối đa được phép khi ghim đầu
+const ADJUST_SPEED = 0.05;              // tốc độ kéo lại khi lệch
 const LOCK_DURATION = 9999;             // thời gian khóa đầu tối đa
 
 let isLocking = false;
