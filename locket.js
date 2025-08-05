@@ -18,7 +18,7 @@ const aimConfig = {
   bulletSpreadSupport: true,
   weaponSpread: 0.15,
   burstFireDelay: 30, // mili giây delay giữa các lần bắn burst
-  burstCount: 5 // số viên liên tiếp cần ghim vào đầu
+  burstCount: 8 // số viên liên tiếp cần ghim vào đầu
 };
 
 let isLocked = false;
