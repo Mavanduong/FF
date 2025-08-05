@@ -1,27 +1,30 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v5.0.0 God Trigger Lock
-// @version      5.0.0
-// @description  Ghim đầu ngay khi bạn bấm bắn. Chính xác, thông minh, mạnh mẽ. Không tự bắn, an toàn, điều khiển toàn bộ bằng tay.
+// @name         AutoHeadlockProMax v5.1.0 Gentle Swipe Lock
+// @version      5.1.0
+// @description  Ghim đầu khi có vuốt nhẹ lúc giữ chuột. Không tự bắn, không lock liên tục. An toàn và chính xác.
 // ==/UserScript==
 
-console.log("🔥 AutoHeadlockProMax v5.0.0 God Trigger Lock ACTIVATED");
+console.log("🔥 AutoHeadlockProMax v5.1.0 Gentle Swipe Lock ACTIVATED");
 
 let isTriggerHeld = false;
 let target = null;
 let bodyLockFrames = 0;
+let lastCrosshair = null;
+let swipeDetected = false;
 
 const lockThreshold = 0.998;
 const softLockThreshold = 0.985;
 const bodyLockThreshold = 0.88;
 const smoothingClose = 0.12;
 const smoothingFar = 0.25;
+const swipeThreshold = 0.0015; // nhạy cỡ nào với vuốt nhẹ
 
 function getHeadPosition(target) {
-  return getBonePosition(target, 8); // luôn lấy đầu
+  return getBonePosition(target, 8);
 }
 
 function getBodyPosition(target) {
-  return getBonePosition(target, 3); // thân người
+  return getBonePosition(target, 3);
 }
 
 function predictHeadPosition(target, msAhead = 90) {
@@ -120,6 +123,22 @@ function findBestVisibleTarget() {
   return best;
 }
 
+function detectSwipe() {
+  const current = getCrosshairPosition();
+  if (!lastCrosshair) {
+    lastCrosshair = current;
+    return false;
+  }
+
+  const dx = current.x - lastCrosshair.x;
+  const dy = current.y - lastCrosshair.y;
+  const dz = current.z - lastCrosshair.z;
+  const movement = Math.sqrt(dx ** 2 + dy ** 2 + dz ** 2);
+
+  lastCrosshair = current;
+  return movement > swipeThreshold;
+}
+
 // Trigger control
 function onFireKeyDown() {
   isTriggerHeld = true;
@@ -127,11 +146,16 @@ function onFireKeyDown() {
 
 function onFireKeyUp() {
   isTriggerHeld = false;
+  swipeDetected = false;
+  lastCrosshair = null;
 }
 
 // Core loop
 function gameLoop() {
   if (!isTriggerHeld) return;
+
+  swipeDetected = detectSwipe();
+  if (!swipeDetected) return;
 
   target = findBestVisibleTarget();
   if (!target) return;
