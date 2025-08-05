@@ -1,112 +1,62 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v10.5 – SwipeToHeadLock
-// @version      10.5.0
-// @description  Vuốt là auto aim dính đầu, lock không buông cho đến khi mục tiêu chết. GhostSnap + StickyTrack.
+// @name         AutoHeadlockProMax v4.3-GodSwipe
+// @version      4.3
+// @description  Vuốt nhẹ/mạnh đều ghim đầu - Tự chỉnh về đầu khi lệch - Lock đến chết
 // ==/UserScript==
 
-(function () {
-  'use strict';
+console.log("🎯 AutoHeadlockProMax v4.3-GodSwipe ACTIVATED");
 
-  const config = {
-    predictionMs: 85,
-    bulletSpeedFactor: 1.35,
-    maxSnapAngle: 30,
-    snapSmoothness: 1.05,
-    recoilCompensation: true,
-    antiAssistOverride: true,
-    enableHumanPath: true,
-    visualStealth: true,
-    lockDistanceMax: 55,
-    onlyLockIfWithin: 0.5
+const HEAD_OFFSET = { x: 0, y: -0.25 };  // vị trí đầu so với tâm địch
+const MAX_HEAD_DISTANCE = 0.5;          // sai số tối đa được phép khi ghim đầu
+const ADJUST_SPEED = 0.15;              // tốc độ kéo lại khi lệch
+const LOCK_DURATION = 9999;             // thời gian khóa đầu tối đa
+
+let isLocking = false;
+
+game.on('tick', () => {
+  const target = game.getClosestEnemy();
+  if (!target || !target.isVisible) return;
+
+  const headPos = {
+    x: target.position.x + HEAD_OFFSET.x,
+    y: target.position.y + HEAD_OFFSET.y
   };
 
-  let lockEnabled = true;
-  let lockedTarget = null;
+  const currentAim = game.getCrosshairPosition();
+  const distToHead = Math.hypot(currentAim.x - headPos.x, currentAim.y - headPos.y);
 
-  function getPredictedHead(target) {
-    const t = config.predictionMs / 1000;
-    let zOffset = 0;
-    if (target.isJumping) zOffset = 0.2;
-    if (target.isCrouching) zOffset = -0.2;
-    return {
-      x: target.head.x + target.velocity.x * t * config.bulletSpeedFactor,
-      y: target.head.y + target.velocity.y * t * config.bulletSpeedFactor,
-      z: target.head.z + target.velocity.z * t * config.bulletSpeedFactor + zOffset
-    };
-  }
+  // Kiểm tra nếu người chơi vuốt (tâm thay đổi)
+  if (game.input.isSwiping) {
+    const swipeVector = game.input.getSwipeVector();
 
-  function calculateAngle(view, target) {
-    const dx = target.x - view.x;
-    const dy = target.y - view.y;
-    const dz = target.z - view.z;
-    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    return {
-      pitch: -Math.atan2(dy, distance) * (180 / Math.PI),
-      yaw: Math.atan2(dx, dz) * (180 / Math.PI),
-      distance,
-      dx, dy, dz
-    };
-  }
-
-  function withinLockRange(angle) {
-    return Math.abs(angle.dx) < config.onlyLockIfWithin &&
-           Math.abs(angle.dy) < config.onlyLockIfWithin &&
-           Math.abs(angle.dz) < config.onlyLockIfWithin;
-  }
-
-  function ghostSnap(player, angle) {
-    const r = config.visualStealth ? (Math.random() - 0.5) * 0.2 : 0;
-    player.view.pitch += angle.pitch * config.snapSmoothness + r;
-    player.view.yaw += angle.yaw * config.snapSmoothness + r;
-  }
-
-  function autoAim(player, target) {
-    if (!lockEnabled || !target || !target.head) return;
-
-    const predicted = getPredictedHead(target);
-    const angle = calculateAngle(player.view, predicted);
-    if (angle.distance > config.lockDistanceMax) return;
-
-    if (withinLockRange(angle)) {
-      ghostSnap(player, angle);
+    // Nếu đang vuốt về hướng địch → auto ghim đầu
+    if (game.vector.isTowards(swipeVector, target.position, game.player.position)) {
+      isLocking = true;
     }
 
-    // Giữ lock nếu còn mục tiêu
-    if (config.antiAssistOverride && angle.distance > 2 && angle.distance < 40) {
-      player.view.pitch -= angle.pitch * 0.3;
-      player.view.yaw -= angle.yaw * 0.3;
+    // Nếu vuốt lệch mà vẫn gần đầu → sửa nhẹ về
+    if (distToHead < MAX_HEAD_DISTANCE && distToHead > 0.05) {
+      const adjust = game.vector.scale(
+        game.vector.normalize(game.vector.diff(headPos, currentAim)),
+        ADJUST_SPEED
+      );
+      game.aim.move(adjust);
     }
 
-    if (config.recoilCompensation && player.isFiring) {
-      player.view.pitch -= 0.15;
+    // Nếu gần đầu < 0.05 → giữ nguyên
+    if (distToHead <= 0.05) {
+      game.aim.lock(headPos, LOCK_DURATION);
     }
   }
 
-  // Bắt đầu khóa khi vuốt vào gần đầu
-  window.addEventListener('playerMove', (e) => {
-    const player = e.detail.player;
-    const target = e.detail.closestEnemy;
+  // Nếu đã khóa → tiếp tục kéo theo nếu địch di chuyển
+  if (isLocking) {
+    game.aim.lock(headPos, LOCK_DURATION);
+  }
 
-    if (!target || !target.head) return;
-
-    const predicted = getPredictedHead(target);
-    const angle = calculateAngle(player.view, predicted);
-
-    if (withinLockRange(angle)) {
-      lockedTarget = target;
-    }
-
-    if (lockedTarget && !lockedTarget.isDead) {
-      autoAim(player, lockedTarget);
-    } else {
-      lockedTarget = null;
-    }
-  });
-
-  window.addEventListener('fire', (e) => {
-    const player = e.detail.player;
-    const target = lockedTarget || e.detail.closestEnemy;
-    autoAim(player, target);
-  });
-
-})();
+  // Auto tắt khi địch chết hoặc out tầm
+  if (target.isDead || !target.isVisible || distToHead > 2) {
+    isLocking = false;
+    game.aim.unlock();
+  }
+});
