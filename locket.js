@@ -1,62 +1,85 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v4.3-GodSwipe
-// @version      4.3
-// @description  Vuốt nhẹ/mạnh đều ghim đầu - Tự chỉnh về đầu khi lệch - Lock đến chết
+// @name         AutoHeadlockProMax v4.3.9-GigaGodMode
+// @version      4.3.9
+// @description  Vuốt chỉnh về đầu - nếu đang đúng đầu mà cố kéo → bắn luôn
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v4.3-GodSwipe ACTIVATED");
+console.log("🎯 AutoHeadlockProMax v4.3.9-GigaGodMode ACTIVATED");
 
-const HEAD_OFFSET = { x: 0, y: -0.5 };  // vị trí đầu so với tâm địch
-const MAX_HEAD_DISTANCE = 0.1;          // sai số tối đa được phép khi ghim đầu
-const ADJUST_SPEED = 0.05;              // tốc độ kéo lại khi lệch
-const LOCK_DURATION = 9999;             // thời gian khóa đầu tối đa
+const HEAD_RADIUS = 0.25; // bán kính vùng đầu
+const LOCK_DISTANCE = 0.5; // ghim đầu nếu cách dưới 0.5m
+const HUMAN_OFFSET = 0.03; // mô phỏng vuốt người thật (±3%)
 
-let isLocking = false;
+function distance3D(a, b) {
+  return Math.sqrt((a.x - b.x)**2 + (a.y - b.y)**2 + (a.z - b.z)**2);
+}
 
-game.on('tick', () => {
-  const target = game.getClosestEnemy();
-  if (!target || !target.isVisible) return;
-
-  const headPos = {
-    x: target.position.x + HEAD_OFFSET.x,
-    y: target.position.y + HEAD_OFFSET.y
+function aimTo(target, player, offset = {x:0,y:0,z:0}) {
+  return {
+    x: target.x + offset.x - player.x,
+    y: target.y + offset.y - player.y,
+    z: target.z + offset.z - player.z,
   };
+}
 
-  const currentAim = game.getCrosshairPosition();
-  const distToHead = Math.hypot(currentAim.x - headPos.x, currentAim.y - headPos.y);
+function isNearHead(playerAim, headPos) {
+  return distance3D(playerAim, headPos) < LOCK_DISTANCE;
+}
 
-  // Kiểm tra nếu người chơi vuốt (tâm thay đổi)
-  if (game.input.isSwiping) {
-    const swipeVector = game.input.getSwipeVector();
+function simulateHumanOffset() {
+  return {
+    x: (Math.random() - 0.5) * HUMAN_OFFSET,
+    y: (Math.random() - 0.5) * HUMAN_OFFSET,
+    z: 0
+  };
+}
 
-    // Nếu đang vuốt về hướng địch → auto ghim đầu
-    if (game.vector.isTowards(swipeVector, target.position, game.player.position)) {
-      isLocking = true;
-    }
+function shouldAutoFire(currentAim, headPos, swipeVector) {
+  // Nếu đang gần đầu và người chơi vuốt thêm lên trên → bắn luôn
+  const deltaY = swipeVector.y;
+  const closeToHead = distance3D(currentAim, headPos) <= HEAD_RADIUS;
+  return closeToHead && deltaY > 0.01;
+}
 
-    // Nếu vuốt lệch mà vẫn gần đầu → sửa nhẹ về
-    if (distToHead < MAX_HEAD_DISTANCE && distToHead > 0.05) {
-      const adjust = game.vector.scale(
-        game.vector.normalize(game.vector.diff(headPos, currentAim)),
-        ADJUST_SPEED
-      );
-      game.aim.move(adjust);
-    }
+game.on("tick", () => {
+  const enemies = game.getEnemies();
+  const player = game.getPlayer();
+  const aim = player.getAim();
+  const swipe = player.getSwipe(); // {x,y,z} vuốt hiện tại
+  if (!enemies || enemies.length === 0) return;
 
-    // Nếu gần đầu < 0.05 → giữ nguyên
-    if (distToHead <= 0.05) {
-      game.aim.lock(headPos, LOCK_DURATION);
+  let bestTarget = null;
+  let bestDistance = Infinity;
+
+  for (let enemy of enemies) {
+    const head = enemy.getBone("head");
+    const dist = distance3D(player, head);
+    if (dist < bestDistance) {
+      bestTarget = enemy;
+      bestDistance = dist;
     }
   }
 
-  // Nếu đã khóa → tiếp tục kéo theo nếu địch di chuyển
-  if (isLocking) {
-    game.aim.lock(headPos, LOCK_DURATION);
+  if (!bestTarget) return;
+
+  const head = bestTarget.getBone("head");
+  const isClose = isNearHead(aim, head);
+  const offset = simulateHumanOffset();
+
+  // Trường hợp vuốt lên quá đầu → kéo nhẹ xuống lại
+  let adjust = {x: 0, y: 0, z: 0};
+  if (aim.y - head.y > HEAD_RADIUS) {
+    adjust.y = -0.02; // kéo nhẹ xuống
   }
 
-  // Auto tắt khi địch chết hoặc out tầm
-  if (target.isDead || !target.isVisible || distToHead > 2) {
-    isLocking = false;
-    game.aim.unlock();
+  // Ghim đầu nếu trong khoảng 0.5m
+  if (isClose) {
+    player.setAim(aimTo(head, player, offset));
+    if (shouldAutoFire(aim, head, swipe)) {
+      player.fire();
+    }
+  } else {
+    // Nếu vuốt bất kỳ kiểu gì → auto gom lại đúng đầu
+    player.setAim(aimTo(head, player, {...offset, ...adjust}));
   }
 });
