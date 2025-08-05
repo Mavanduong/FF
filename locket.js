@@ -1,10 +1,10 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v4.5 UltraGigaStealth
-// @version      4.5.0
-// @description  Dự đoán nâng cao, định vị địch qua âm thanh, tự điều chỉnh phản ứng + GigaStealth AI né + Smart BurstFire RecoilControl
+// @name         AutoHeadlockProMax v4.4 HyperGodMode
+// @version      4.4.1
+// @description  Dự đoán di chuyển, ghi nhớ kẻ địch, ghim đầu cưỡng bức, né AI nâng cao, xuyên vật thể nếu cần + Sound ESP Tracking
 // ==/UserScript==
 
-console.log("🎯 AutoHeadlockProMax v4.5 UltraGigaStealth ACTIVATED");
+console.log("🎯 AutoHeadlockProMax v4.4.1 HyperGodMode + SoundESP ACTIVATED");
 
 let target = null;
 let isFiring = false;
@@ -102,7 +102,7 @@ function autoBurstFire(count) {
     }
     fire();
     shots++;
-    setTimeout(burst, burstDelay + Math.floor(Math.random() * 10));
+    setTimeout(burst, burstDelay);
   }
   burst();
 }
@@ -156,7 +156,7 @@ function updateSoundTargets() {
   const sounds = getRecentEnemySounds?.() || [];
   soundTargets = sounds
     .filter(s => Date.now() - s.timestamp < 800)
-    .map(s => ({ pos: s.position, priority: s.type === 'footstep' ? 3 : (s.type === 'reload' ? 2 : 1) }));
+    .map(s => ({ pos: s.position, priority: s.type === 'footstep' ? 1 : (s.type === 'reload' ? 2 : 3) }));
 }
 
 function findSoundTarget() {
@@ -177,8 +177,8 @@ function findBestTarget() {
 
     const head = getHeadPosition(enemy);
     const distance = distance3D(getPlayerPosition(), head);
-    const exposure = enemy.headVisible ? 1.5 : 0.4;
-    const score = (exposure * 1.5) - distance + (Math.random() * 0.3);
+    const exposure = enemy.headVisible ? 1 : 0.3;
+    const score = (exposure * 1.5) - distance;
 
     if (score > bestScore) {
       bestScore = score;
