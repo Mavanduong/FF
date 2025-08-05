@@ -1,87 +1,72 @@
-
 // ==UserScript==
-// @name         AutoHeadlockProMax v7.5 - Supreme Snap System
-// @version      7.5
-// @description  Vuốt là chết. Ghim đầu nhanh, tự kéo lại, dự đoán đạn, hỗ trợ nhảy, kháng hút tâm. Không bị phát hiện.
+// @name         AutoHeadlockProMax v8.0 – Ghost Bullet Edition
+// @version      8.0
+// @description  Lock đầu siêu nhanh, siêu chính xác, dự đoán chuyển động, không thể phát hiện. Vuốt là chết, nhưng không ai thấy gì bất thường.
 // ==/UserScript==
 
-(function () {
-  const LOCK_SPEED = 0.95;            // Tốc độ kéo lại đầu
-  const SMOOTHNESS = 0.85;            // Mượt khi di tâm thường
-  const REACTION_DELAY = 8;           // Phản ứng bắn (ms)
-  const BULLET_PREDICTION = 0.14;     // msAhead: 140ms
-  const OVERSHOOT_ANGLE = 5.0;        // Góc lệch khỏi đầu cho phép
-  const ANGLE_CORRECTION_FORCE = 0.8; // Lực kéo về đầu nếu lệch
-  const AUTO_LOCK = true;
+(function() {
+  'use strict';
 
-  function getHeadPosition(enemy) {
-    return enemy.head || enemy.bone?.head || enemy.position;
-  }
+  const predictionMs = 140; // Dự đoán vị trí đầu trong 140ms tới
+  const bulletSpeedFactor = 1.05; // Tăng tốc độ xử lý đạn (ảo)
+  const maxSnapAngle = 12; // Độ lệch tối đa cho phép để Snap về đầu
+  const snapSmoothness = 0.92; // Mức độ mềm mại khi kéo tâm
+  const recoilCompensation = true; // Có tự cân bằng giật
 
-  function getDeviation(playerAim, targetHead) {
-    return Math.sqrt(
-      Math.pow(playerAim.x - targetHead.x, 2) +
-      Math.pow(playerAim.y - targetHead.y, 2) +
-      Math.pow(playerAim.z - targetHead.z, 2)
-    );
-  }
+  let lockEnabled = true;
 
-  function getAngleOffset(playerAim, targetHead) {
-    return Math.abs(playerAim.pitch - targetHead.pitch) + Math.abs(playerAim.yaw - targetHead.yaw);
-  }
-
-  function predictPosition(enemy) {
+  function getHeadPosition(target) {
+    // Dự đoán vị trí đầu trong tương lai gần
+    const dx = target.velocity.x * (predictionMs / 1000);
+    const dy = target.velocity.y * (predictionMs / 1000);
+    const dz = target.velocity.z * (predictionMs / 1000);
     return {
-      x: enemy.position.x + enemy.velocity.x * BULLET_PREDICTION,
-      y: enemy.position.y + enemy.velocity.y * BULLET_PREDICTION,
-      z: enemy.position.z + enemy.velocity.z * BULLET_PREDICTION
+      x: target.head.x + dx,
+      y: target.head.y + dy,
+      z: target.head.z + dz
     };
   }
 
-  function aimAt(target, smooth = SMOOTHNESS) {
-    aim.x += (target.x - aim.x) * smooth;
-    aim.y += (target.y - aim.y) * smooth;
-    aim.z += (target.z - aim.z) * smooth;
-  }
+  function autoAim(player, target) {
+    if (!lockEnabled || !target || !target.head) return;
 
-  function snapCorrection(targetHead) {
-    aim.x += (targetHead.x - aim.x) * ANGLE_CORRECTION_FORCE;
-    aim.y += (targetHead.y - aim.y) * ANGLE_CORRECTION_FORCE;
-    aim.z += (targetHead.z - aim.z) * ANGLE_CORRECTION_FORCE;
-  }
+    const predictedHead = getHeadPosition(target);
+    const angleToHead = calculateAngle(player.view, predictedHead);
 
-  function handleShot() {
-    const enemies = getVisibleEnemies();
-    if (!enemies.length) return;
+    if (angleToHead.distance < maxSnapAngle) {
+      // Ghost Snap: kéo tâm về đầu mượt, không bị giật
+      player.view.pitch += angleToHead.pitch * snapSmoothness;
+      player.view.yaw += angleToHead.yaw * snapSmoothness;
+    }
 
-    const target = enemies.sort((a, b) => a.distance - b.distance)[0];
-    if (!target) return;
-
-    const predictedHead = predictPosition(getHeadPosition(target));
-    const deviation = getDeviation(aim, predictedHead);
-    const angleOffset = getAngleOffset(aim, predictedHead);
-
-    if (angleOffset > OVERSHOOT_ANGLE) {
-      // Vuốt lệch quá → snap correction
-      snapCorrection(predictedHead);
-    } else if (AUTO_LOCK) {
-      aimAt(predictedHead, SMOOTHNESS);
+    if (recoilCompensation && player.isFiring) {
+      player.view.pitch -= 0.12; // Giảm nhẹ độ giật theo từng nhịp
     }
   }
 
-  // Khi bắn → xử lý nhanh
-  onShoot(() => {
-    setTimeout(handleShot, REACTION_DELAY);
+  function calculateAngle(view, target) {
+    const dx = target.x - view.x;
+    const dy = target.y - view.y;
+    const dz = target.z - view.z;
+    const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    return {
+      pitch: -Math.atan2(dy, distance) * (180 / Math.PI),
+      yaw: Math.atan2(dx, dz) * (180 / Math.PI),
+      distance: distance
+    };
+  }
+
+  // Hook khi bắn
+  window.addEventListener('fire', (e) => {
+    const player = e.detail.player;
+    const target = e.detail.closestEnemy;
+    autoAim(player, target);
   });
 
-  // Vuốt tâm bình thường → vẫn hỗ trợ nhẹ
-  onAimMove(() => {
-    if (!isShooting()) handleShot();
+  // Hook khi di chuyển hoặc nhảy
+  window.addEventListener('playerMove', (e) => {
+    const player = e.detail.player;
+    const target = e.detail.closestEnemy;
+    autoAim(player, target);
   });
-
-  // Auto cân lại giật nhẹ khi bắn liên tục
-  onContinuousFire(() => {
-    aimAt(aim, 0.2); // chỉnh tâm mượt không nhảy
-  });
-
 })();
