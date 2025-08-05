@@ -1,63 +1,63 @@
+
 // ==UserScript==
-// @name         AutoHeadlockProMax v6.0 Ultra Lock
-// @version      6.0
-// @description  Vuốt là chết, khóa đầu trong 1 frame. Không chệch, không auto, không delay.
+// @name         AutoHeadlockProMax v6.5 Anti-AimAssist
+// @version      6.5
+// @description  Vuốt là chết. Chống hút tâm body. Ghim đầu ngay cả khi bị game kéo lệch.
 // ==/UserScript==
 
-console.log("🔫 AutoHeadlockProMax v6.0 ULTRA LOCK READY");
+console.log("🎯 AutoHeadlockProMax v6.5 - Anti-AimAssist Loaded");
 
-let isTriggerHeld = false;
+let isAiming = false;
+const LOCK_ZONE = 0.9985;
+const FORCE_HEAD_RATE = 2; // số lần override mỗi giây
 
-const lockThreshold = 0.9992;
-const smoothing = 0.05;
-
-function getHead(target) {
-  return getBonePosition(target, 8);
+function getHeadPos(enemy) {
+  return getBonePosition(enemy, 8);
 }
 
-function normalize(vec) {
-  const mag = Math.sqrt(vec.x**2 + vec.y**2 + vec.z**2);
-  return { x: vec.x / mag, y: vec.y / mag, z: vec.z / mag };
+function isNearHead(enemy) {
+  const head = getHeadPos(enemy);
+  return isCrosshairNear(head, LOCK_ZONE);
 }
 
-function aimAtHead(target) {
-  const myPos = getPlayerPosition();
-  const head = getHead(target);
-  const dir = normalize({
-    x: head.x - myPos.x,
-    y: head.y - myPos.y,
-    z: head.z - myPos.z
-  });
+function forceAimHead(enemy) {
+  const player = getPlayerPosition();
+  const head = getHeadPos(enemy);
+  const dir = {
+    x: head.x - player.x,
+    y: head.y - player.y,
+    z: head.z - player.z
+  };
+  const mag = Math.sqrt(dir.x**2 + dir.y**2 + dir.z**2);
   moveCrosshair({
-    x: dir.x * (1 - smoothing),
-    y: dir.y * (1 - smoothing),
-    z: dir.z * (1 - smoothing)
+    x: dir.x / mag,
+    y: dir.y / mag,
+    z: dir.z / mag
   });
 }
 
-function findTarget() {
-  const enemies = getNearbyEnemies();
-  for (const enemy of enemies) {
-    if (!enemy.visible || !enemy.headVisible) continue;
-    if (isCrosshairNear(getHead(enemy), lockThreshold)) {
-      return enemy;
-    }
+function getTargetEnemy() {
+  const list = getNearbyEnemies();
+  for (let e of list) {
+    if (e.visible && e.headVisible && isNearHead(e)) return e;
   }
   return null;
 }
 
-function onFireKeyDown() {
-  isTriggerHeld = true;
+function onPressShoot() {
+  isAiming = true;
 }
-function onFireKeyUp() {
-  isTriggerHeld = false;
-}
-
-function gameLoop() {
-  if (!isTriggerHeld) return;
-  const target = findTarget();
-  if (target) aimAtHead(target);
+function onReleaseShoot() {
+  isAiming = false;
 }
 
-setInterval(gameLoop, 16);
-bindFireKey(onFireKeyDown, onFireKeyUp);
+setInterval(() => {
+  if (!isAiming) return;
+  const target = getTargetEnemy();
+  if (target) {
+    forceAimHead(target); // Override lần 1
+    setTimeout(() => forceAimHead(target), 5);  // Override lần 2 – phản hút
+  }
+}, 1000 / FORCE_HEAD_RATE);
+
+bindFireKey(onPressShoot, onReleaseShoot);
