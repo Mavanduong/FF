@@ -5,7 +5,7 @@
 // ==/UserScript==
 
 const aimConfig = {
-  aimSpeed: 0.65, // tốc độ kéo tâm về đầu (0.3 ~ 0.6 là mượt & nhanh)
+  aimSpeed: 0.10, // tốc độ kéo tâm về đầu (0.3 ~ 0.6 là mượt & nhanh)
   headRadius: 0.28,
   predictionFactor: 0.48,
   burstCount: 10,
