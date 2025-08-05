@@ -1,72 +1,91 @@
 // ==UserScript==
-// @name         AntiBanSafe+
-// @version      2.0
-// @description  Chống ban tuyệt đối - Giả lập người chơi thật, che log, fake thiết bị, giấu dấu hiệu gian lận
+// @name         AntiBanSafe+ v3.0 - Ultimate Stealth
+// @version      3.0
+// @description  Chống ban tối đa - ẩn hành vi cheat, giả thiết bị, mô phỏng người chơi thật
 // ==/UserScript==
 
 (function () {
   try {
     if (typeof $request === 'undefined' || !$request.headers) return $done({});
 
-    // ========== 🛡 Cấu hình thiết bị giả ==========
+    // 🎯 Thiết bị giả
     const spoofHeaders = {
       "User-Agent": "FreeFire_iOS_2.99.0",
-      "X-Device-Model": "iPhone14,3",
-      "X-System-Version": "iOS 17.5",
+      "X-Device-Model": "iPhone15,3",
+      "X-System-Version": "iOS 17.6",
       "X-App-Version": "2.99.0",
-      "X-Fake-Client": "LegitPlayer",
-      "X-Session-Behavior": "Organic",
+      "X-Client-Type": "Mobile_Legit",
+      "X-Session-Behavior": "Organic_Human",
+      "X-Device-ID": `${genUUID()}`,
+      "X-IP-Address": `192.168.${random(0, 255)}.${random(0, 255)}`,
+      "X-MAC-Address": randomMAC()
     };
 
-    // ========== 🎲 Ngẫu nhiên hóa hành vi người dùng ==========
+    // 🎮 Hành vi người chơi thật
+    const humanizedHeaders = {
+      "X-Touch-Offset": `${random(-3, 3)},${random(-3, 3)}`,
+      "X-Drag-Delay": `${random(70, 130)}ms`,
+      "X-Packet-Timing": `${random(27, 37)}ms`,
+      "X-Recoil-Pattern": `type_${random(1, 5)}`,
+      "X-Swipe-Speed": `${random(21, 37)}px/s`,
+      "X-Touch-Pressure": `${random(1, 5)}`,
+      "X-Sensor-Data": `${random(1000, 5000)}:${random(0, 360)}:${random(1, 9)}`
+    };
+
+    // 🚫 Xoá toàn bộ dấu hiệu cheat
+    const suspiciousKeys = [
+      "X-AutoHeadlock", "X-AimBot", "X-GodMode", "X-Cheat-Flag", "X-Cheat-Behavior",
+      "X-Suspicious-Drag", "X-ViewAssist", "X-Injected-Code", "X-SpeedLock", "X-FireHook",
+      "X-WeaponMod", "X-Custom-Aim", "X-Overlay", "X-MemoryPatch"
+    ];
+
+    suspiciousKeys.forEach(key => delete $request.headers[key]);
+
+    // 🛡️ Bảo vệ log (giấu & chống bị hook lại)
+    const blockedWords = ["cheat", "aimbot", "ghim", "inject", "hook", "mod", "ban"];
+    const originalConsole = { ...console };
+
+    ["log", "warn", "error", "info", "debug"].forEach(method => {
+      console[method] = function (...args) {
+        if (args.some(arg => typeof arg === 'string' && blockedWords.some(w => arg.toLowerCase().includes(w)))) return;
+        try {
+          originalConsole[method].apply(console, args);
+        } catch (e) {}
+      };
+      Object.defineProperty(console, method, {
+        configurable: false,
+        writable: false
+      });
+    });
+
+    // 🔐 Không cho inject lại
+    Object.freeze(console);
+
+    // 🧠 Gộp và gửi lại header
+    Object.assign($request.headers, spoofHeaders, humanizedHeaders);
+    $done({ headers: $request.headers });
+
+    // ======== ⚙️ Helper function ========
     function random(min, max) {
       return Math.floor(Math.random() * (max - min + 1) + min);
     }
 
-    const humanizedHeaders = {
-      "X-Touch-Offset": `${random(-4, 4)},${random(-4, 4)}`,
-      "X-Drag-Delay": `${random(75, 125)}ms`,
-      "X-Packet-Timing": `${random(27, 37)}ms`,
-      "X-Recoil-Pattern": `type_${random(1, 4)}`,
-      "X-Swipe-Speed": `${random(22, 38)}px/s`,
-      "X-Touch-Pressure": `${random(0, 5)}`,
-      "X-Sensor-Data": `${random(1000, 5000)}:${random(0, 360)}`,
-    };
-
-    // ========== 🚫 Xoá toàn bộ header nghi vấn ==========
-    const suspiciousKeys = [
-      "X-AutoHeadlock",
-      "X-AimBot",
-      "X-GodMode",
-      "X-Cheat-Flag",
-      "X-Cheat-Behavior",
-      "X-Suspicious-Drag",
-      "X-ViewAssist",
-      "X-Injected-Code",
-    ];
-
-    for (const key of suspiciousKeys) {
-      delete $request.headers[key];
+    function genUUID() {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
     }
 
-    // ========== 🔒 Giấu dấu vết log ==========
-    const originalConsole = { ...console };
-    const blockedLogs = ["AntiBanSafe", "cheat", "aimbot", "ghim", "hook", "inject"];
-
-    for (const method of ["log", "warn", "error", "info", "debug"]) {
-      console[method] = function (...args) {
-        if (args.some(arg => typeof arg === 'string' && blockedLogs.some(b => arg.toLowerCase().includes(b)))) return;
-        originalConsole[method](...args);
-      };
+    function randomMAC() {
+      const hex = "0123456789ABCDEF";
+      return Array.from({ length: 6 }, () =>
+        hex.charAt(Math.floor(Math.random() * 16)) +
+        hex.charAt(Math.floor(Math.random() * 16))
+      ).join(":");
     }
-
-    // ========== 🧠 Gộp header lại và trả về ==========
-    Object.assign($request.headers, spoofHeaders, humanizedHeaders);
-
-    $done({ headers: $request.headers });
 
   } catch (err) {
-    // Chặn luôn lỗi bị log
-    typeof $done === 'function' && $done({});
+    if (typeof $done === 'function') $done({});
   }
 })();
