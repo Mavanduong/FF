@@ -5,15 +5,15 @@
 // ==/UserScript==
 
 const aimConfig = {
-  aimSpeed: 99,
-  headRadius: 99,
-  predictionFactor: 99,
+  aimSpeed: 999,
+  headRadius: 999,
+  predictionFactor: 999,
   wallCheck: true,
   autoFire: true,
   lockUntilDeath: true,
   fireBurst: true,
-  burstCount: 99,
-  burstDelay: 99, // nhanh hơn
+  burstCount: 999,
+  burstDelay: 999, // nhanh hơn
   burstRandomness: 0, // độ lệch ngẫu nhiên nhỏ tránh phát hiện
 };
 
