@@ -9,7 +9,7 @@ const config = {
   headOffsetY: -0.3, // Dịch lên đầu
   maxDistance: 120, // Khoảng cách tối đa để khóa
   prediction: true,
-  predictionFactor: 1.45, // Dự đoán theo vận tốc
+  predictionFactor: 2, // Dự đoán theo vận tốc
   targetSticky: true, // Giữ mục tiêu
   overrideFire: true,
   lockWhileScoped: true,
