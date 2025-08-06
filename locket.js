@@ -13,8 +13,8 @@ const aimConfig = {
   lockUntilDeath: true,
   fireBurst: true,
   burstCount: 9,
-  burstDelay: 22, // nhanh hơn
-  burstRandomness: 5, // độ lệch ngẫu nhiên nhỏ tránh phát hiện
+  burstDelay: 99, // nhanh hơn
+  burstRandomness: 0, // độ lệch ngẫu nhiên nhỏ tránh phát hiện
 };
 
 let isLocked = false;
