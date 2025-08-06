@@ -5,7 +5,7 @@
 // ==/UserScript==
 
 const config = {
-  aimSpeed: 2000, // Gấp đôi tốc độ cũ
+  aimSpeed: 4000, // Gấp đôi tốc độ cũ
   maxDistance: 150, // Xa hơn
   targetSticky: true,
   overrideFire: true,
