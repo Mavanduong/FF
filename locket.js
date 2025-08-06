@@ -1,24 +1,31 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v7.5 – SmartAutoLock Ultra Instinct
-// @version      7.5
-// @description  Ghim đầu AI cao cấp, ưu tiên mục tiêu nguy hiểm, chống phát hiện
+// @name         AutoHeadlockProMax v7.6 – MP40 ReAim HeadLock
+// @version      7.6
+// @description  Ghim từng viên theo đầu cho MP40, cực chuẩn, re-aim mỗi viên, tối ưu burst
 // ==/UserScript==
 
 const aimConfig = {
-  aimSpeed: 999,
-  headRadius: 999,
-  predictionFactor: 999,
+  aimSpeed: 1.5,
+  headRadius: 0.3,
   wallCheck: true,
   autoFire: true,
   lockUntilDeath: true,
   fireBurst: true,
-  burstCount: 999,
-  burstDelay: 999, // nhanh hơn
-  burstRandomness: 0, // độ lệch ngẫu nhiên nhỏ tránh phát hiện
+  burstRandomness: 3
 };
 
 let isLocked = false;
 let burstTimer = null;
+
+// Cấu hình riêng từng loại súng
+const weaponProfiles = {
+  MP40: { burstCount: 12, burstDelay: 18, predictionFactor: 0.45 },
+  M1014: { burstCount: 4, burstDelay: 60, predictionFactor: 0.35 },
+  Vector: { burstCount: 14, burstDelay: 16, predictionFactor: 0.40 },
+  SCAR: { burstCount: 6, burstDelay: 30, predictionFactor: 0.5 },
+  AK: { burstCount: 5, burstDelay: 35, predictionFactor: 0.55 },
+  default: { burstCount: 8, burstDelay: 25, predictionFactor: 0.5 }
+};
 
 function getDistance(a, b) {
   const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
@@ -52,10 +59,47 @@ function isVisible(head) {
   return !game.raycastObstructed(head);
 }
 
+function scoreTarget(enemy, crosshair) {
+  if (!enemy.head || !enemy.visible || enemy.health <= 0) return -1;
+  const head = predictHead(enemy);
+  if (!isVisible(head)) return -1;
+
+  const dist = getDistance(crosshair, head);
+  const dangerBonus = enemy.isAimingAtMe ? 10 : 0;
+  const lowHealthBonus = (100 - enemy.health) * 0.1;
+
+  return 1000 - dist * 10 + dangerBonus + lowHealthBonus;
+}
+
+function getBestTarget(enemies, crosshair) {
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const enemy of enemies) {
+    const score = scoreTarget(enemy, crosshair);
+    if (score > bestScore) {
+      best = enemy;
+      bestScore = score;
+    }
+  }
+
+  return best;
+}
+
+function applyWeaponProfile() {
+  const weapon = game.getCurrentWeapon?.()?.name || "default";
+  const profile = weaponProfiles[weapon] || weaponProfiles.default;
+
+  aimConfig.burstCount = profile.burstCount;
+  aimConfig.burstDelay = profile.burstDelay;
+  aimConfig.predictionFactor = profile.predictionFactor;
+}
+
 function triggerSmartBurst(target) {
   if (burstTimer) clearInterval(burstTimer);
-  let shot = 0;
+  applyWeaponProfile();
 
+  let shot = 0;
   burstTimer = setInterval(() => {
     if (shot >= aimConfig.burstCount || !target || target.health <= 0) {
       clearInterval(burstTimer);
@@ -68,50 +112,13 @@ function triggerSmartBurst(target) {
     game.setCrosshairPosition(aimPos);
 
     if (isInHeadZone(aimPos, predictedHead)) {
-      console.log(`🎯 Ghim viên #${shot + 1} vào đầu`);
-      // game.fire(); // mở nếu có API bắn
+      console.log(`🎯 ${game.getCurrentWeapon?.()?.name || "Súng"} viên #${shot + 1} ghim đầu`);
+      // game.fire(); // Bật nếu API game.fire() có
     }
 
     shot++;
   }, aimConfig.burstDelay + Math.random() * aimConfig.burstRandomness);
 }
-
-function scoreTarget(enemy, crosshair) {
-  if (!enemy.head || !enemy.visible || enemy.health <= 0) return -1;
-  const head = predictHead(enemy);
-  if (!isVisible(head)) return -1;
-
-  let dist = getDistance(crosshair, head);
-  let dangerBonus = enemy.isAimingAtMe ? 10 : 0;
-  let lowHealthBonus = (100 - enemy.health) * 0.1;
-
-  return 1000 - dist * 10 + dangerBonus + lowHealthBonus;
-}
-
-function getBestTarget(enemies, crosshair) {
-  let best = null;
-  let bestScore = -Infinity;
-
-  for (let enemy of enemies) {
-    let score = scoreTarget(enemy, crosshair);
-    if (score > bestScore) {
-      best = enemy;
-      bestScore = score;
-    }
-  }
-
-  return best;
-}
-
-const weaponProfiles = {
-  MP40: { burstCount: 10, burstDelay: 20, predictionFactor: 0.45 },
-  M1014: { burstCount: 4, burstDelay: 60, predictionFactor: 0.35 },
-  Vector: { burstCount: 12, burstDelay: 18, predictionFactor: 0.40 },
-  SCAR: { burstCount: 6, burstDelay: 30, predictionFactor: 0.5 },
-  AK: { burstCount: 5, burstDelay: 35, predictionFactor: 0.55 },
-  default: { burstCount: 8, burstDelay: 25, predictionFactor: 0.5 }
-};
-
 
 game.on("tick", () => {
   const enemies = game.getVisibleEnemies();
@@ -130,11 +137,11 @@ game.on("tick", () => {
     if (isInHeadZone(aimNow, predictedHead)) {
       if (!isLocked) {
         isLocked = true;
-        console.log(`🔒 Đã khoá mục tiêu: ${target.name || "Enemy"}`);
+        console.log(`🔒 Đã khoá: ${target.name || "Enemy"}`);
         if (aimConfig.fireBurst) {
           triggerSmartBurst(target);
         } else {
-          // game.fire();
+          // game.fire(); // Dành cho trường hợp không dùng burst
         }
       } else if (target.health <= 0) {
         console.log("☠️ Mục tiêu đã chết – kết thúc burst");
@@ -146,3 +153,4 @@ game.on("tick", () => {
     }
   }
 });
+
