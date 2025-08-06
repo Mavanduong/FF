@@ -6,7 +6,7 @@
 
 const aimConfig = {
   aimSpeed: 999,
-  headRadius: 0.3,
+  headRadius: 0,9,
   wallCheck: true,
   autoFire: true,
   lockUntilDeath: true,
