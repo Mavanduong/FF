@@ -5,7 +5,7 @@
 // ==/UserScript==
 
 const aimConfig = {
-  aimSpeed: 1, // mượt gần như tức thì nhưng vẫn có độ "thật"
+  aimSpeed: 0.999, // mượt gần như tức thì nhưng vẫn có độ "thật"
   headRadius: 0.999, // vùng trúng đầu siêu rộng để ghim dễ
   wallCheck: true,
   autoFire: true,
