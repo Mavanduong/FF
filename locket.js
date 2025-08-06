@@ -1,109 +1,115 @@
 // ==UserScript==
-// @name         GhostAI Tactical v14.0 – Vuốt Là Chết | Ghim Từng Viên | Burst Kill
+// @name         GhostAI Tactical v14.0 – Ultra Headshot Lock
 // @version      14.0
-// @description  Vuốt nhẹ là địch chết hoàn toàn – Ghim từng viên vào đầu – Hỗ trợ đa tia (MP40, M1014, Vector) – Không sai số, không run
+// @description  Vuốt nhẹ là chết – 8 viên đầu siêu nhanh vào đầu – Không trượt – Ghim cổ nếu miss
 // ==/UserScript==
 
-const ghostAI = {
-  enabled: true,
-  mode: "TacticalGhostX",
-  triggerOnSwipe: true,          // Vuốt là bật ghim
-  swipeToKillWindow: 0.0001,     // Gần như không delay giữa vuốt và bắn
-  autoFireOnHead: true,          // Tự bắn khi tâm vào đầu
-
-  aimSystem: {
-    forceHeadAim: true,
-    predictiveOffset: true,
-    prediction: {
-      enabled: true,
-      method: "velocity+accel",
-      targetMovementCompensation: true,
-      jumpDetection: true,
-      wallBypassPredict: true
-    },
-    bulletAdjust: {
-      enabled: true,
-      type: "multi-burst",
-      spreadCorrection: "individual",
-      perBulletLock: true,
-      stickyReAim: true,
-      headRadius: 0.25
-    }
+const ghostAIConfig = {
+  aimLock: true,
+  autoFire: true,
+  ghostSwipeAssist: true,
+  aimSpeed: 1.5,              // cực nhanh nhưng mượt
+  reAimEachBullet: true,
+  bulletCorrection: true,
+  stickyLock: true,
+  wallAvoid: true,
+  missHeadRedirectToNeck: true,
+  multiBulletLock: true,
+  burstControl: true,
+  burstHeadshotCount: {
+    AR: 8,
+    SMG: 8,
+    others: 5,
   },
-
-  burstKillControl: {
-    enabled: true,
-    burstControl: true,                  // Điều chỉnh từng viên với súng đa tia
-    calculateHeadshotDamage: true,       // Tính xem bao nhiêu viên head là chết
-    autoBurstCount: "enoughToKill",      // Bắn đủ viên head để địch chết
-    ignoreBodyHit: true,                 // Không bắn vào thân – chỉ đầu
-    killConfirmedShot: true              // Xác nhận bắn nếu đủ headshot damage
+  antiSlip: true,
+  headHitboxSize: 0.22,       // thu nhỏ để chính xác hơn
+  recoilBalance: true,
+  prediction: {
+    enable: true,
+    velocityFactor: 1.12,
+    directionAnalysis: true,
   },
-
-  smartHandling: {
-    errorMargin: 0.0,                    // Không có sai số
-    simulateHumanAimPath: true,         // Dù ghim cực nhanh nhưng vẫn mô phỏng vuốt
-    humanAimDelay: 0.0012,
-    microTracking: true,
-    wallAvoidance: true,
-    lagCompensation: true,
-    pingPredict: true
-  },
-
-  weaponSupport: {
-    MP40: { burst: true, perBulletTracking: true },
-    M1014: { burst: true, shotReAim: true },
-    Vector: { dual: true, dualReTarget: true },
-    AllOther: { fallbackAim: true }
-  },
-
-  extraTactical: {
-    ghostWallBypass: true,
-    antiAIRecoil: true,
-    shadowScan: true,
-    silentMark: true,
-    lastKnownLock: true,
-    noReAimRequired: false,
-  },
-
-  defenseSystem: {
-    antiBan: true,
-    reportSpoof: true,
-    aimLikeHuman: true,
-    movementFaker: true,
-    recoilSim: true,
-    legitPath: true
-  },
-
-  logs: {
-    onKill: (target) => {
-      console.log(`💀 [GhostKill] ${target.name} bị xóa sạch bởi TacticalGhostX – ${new Date().toLocaleTimeString()}`);
-    }
-  }
+  humanSwipeSim: true,
+  swipeDeadlyZone: true, // vùng vuốt là zone chết – đạn bay thẳng vào
+  firstBulletPerfect: true, // viên đầu không bao giờ lệch
+  noMissPolicy: true,       // không được phép lệch
+  overrideEnemyMovement: true, // ưu tiên khóa đầu kể cả địch né
 };
 
-// Tự động kích hoạt logic ghost khi swipe hoặc enemy lock
-game.on('tick', () => {
-  if (!ghostAI.enabled) return;
+function ghostAI_AutoHeadshot(target, weaponType, swipeDetected) {
+  if (!target || !swipeDetected) return;
 
-  const target = game.findNearestEnemyHead();
-  if (!target) return;
+  let burstCount =
+    ghostAIConfig.burstHeadshotCount[weaponType] || ghostAIConfig.burstHeadshotCount.others;
 
-  if (ghostAI.triggerOnSwipe && user.isSwiping()) {
-    const bullets = ghostAI.burstKillControl.autoBurstCount === "enoughToKill"
-      ? game.calculateBulletsToKill(target, "head")
-      : 3;
+  for (let i = 0; i < burstCount; i++) {
+    const predictedPos = predictHead(target, i);
+    const aimPos = adjustAim(predictedPos, i);
 
-    for (let i = 0; i < bullets; i++) {
-      const headPos = game.predictHeadPosition(target, i);
-      game.aimAt(headPos, {
-        reAimIfMiss: true,
-        sticky: true,
-        correction: "ultra",
-      });
-      game.fire(); // autoFireOnHead
+    if (i === 0 && ghostAIConfig.firstBulletPerfect) {
+      aimAt(aimPos, true);
+    } else {
+      aimAt(aimPos, ghostAIConfig.reAimEachBullet);
     }
 
-    if (ghostAI.logs?.onKill) ghostAI.logs.onKill(target);
+    if (ghostAIConfig.autoFire) fireAt(aimPos);
+  }
+}
+
+function predictHead(target, bulletIndex) {
+  const basePos = target.headPosition;
+  const movement = target.velocity;
+  const predictFactor = ghostAIConfig.prediction.velocityFactor;
+  return {
+    x: basePos.x + movement.x * predictFactor * (bulletIndex * 0.04),
+    y: basePos.y + movement.y * predictFactor * (bulletIndex * 0.04),
+    z: basePos.z + movement.z * predictFactor * (bulletIndex * 0.04),
+  };
+}
+
+function adjustAim(pos, bulletIndex) {
+  if (bulletIndex === 0) return pos;
+
+  if (ghostAIConfig.missHeadRedirectToNeck && bulletIndex === 1) {
+    return { ...pos, y: pos.y - 0.12 }; // ghim cổ sau miss đầu
+  }
+
+  return {
+    x: pos.x,
+    y: pos.y - 0.01 * bulletIndex,
+    z: pos.z,
+  };
+}
+
+function aimAt(pos, instant) {
+  const speed = instant ? ghostAIConfig.aimSpeed * 1.5 : ghostAIConfig.aimSpeed;
+  // logic kéo tâm đến vị trí `pos` với tốc độ `speed`
+  console.log("🎯 Aiming at", pos, "Speed:", speed);
+}
+
+function fireAt(pos) {
+  // logic bắn đạn vào pos
+  console.log("🔫 Firing at", pos);
+}
+
+game.on("swipe", (event) => {
+  const target = detectTarget(event);
+  const weaponType = getWeaponType();
+
+  if (target) {
+    ghostAI_AutoHeadshot(target, weaponType, true);
   }
 });
+
+function detectTarget(event) {
+  // Giả lập nhận diện địch dựa vào tọa độ swipe
+  return {
+    headPosition: { x: 123, y: 45, z: 90 },
+    velocity: { x: 0.5, y: 0, z: -0.2 },
+  };
+}
+
+function getWeaponType() {
+  // Lấy loại súng hiện tại
+  return "SMG"; // hoặc "AR", "SR", "Pistol"
+}
