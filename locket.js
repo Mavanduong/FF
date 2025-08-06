@@ -1,177 +1,79 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v8.1.0-GodModeX1000
-// @version      8.1.0
-// @description  Ghim đầu thần thánh, 1000% chính xác, chỉnh đạn giữa không trung, bắn như thần
+// @name         AutoHeadlockProMax v9.9-GodSwipe999
+// @version      9.9
+// @description  Vuốt bắn là dính – Ghim đầu kể cả địch nhảy, ngồi, chạy – Bất chấp bật/tắt ngắm
 // ==/UserScript==
 
-const aimConfig = {
-  aimSpeed: 1, // tức thì
-  headRadius: 9999, // vùng đầu rộng nhất có thể
-  wallCheck: false, // xuyên tường
-  autoFire: true,
-  lockUntilDeath: true,
-  fireBurst: true,
-  burstRandomness: 0, // không random
-  allowBulletRedirect: true,
-  prioritiseDangerousEnemy: true,
-  adaptivePrediction: true,
+const config = {
+  aimSpeed: 999, // Cực nhanh
+  headOffsetY: -0.3, // Dịch lên đầu
+  maxDistance: 120, // Khoảng cách tối đa để khóa
+  prediction: true,
+  predictionFactor: 1.45, // Dự đoán theo vận tốc
+  targetSticky: true, // Giữ mục tiêu
+  overrideFire: true,
+  lockWhileScoped: true,
+  lockWhileHipfire: true,
 };
 
-let isLocked = false;
-let burstTimer = null;
-let activeBullets = [];
+let currentTarget = null;
+let isSwiping = false;
+let swipeStart = { x: 0, y: 0 };
 
-const weaponProfiles = {
-  MP40: { burstCount: 30, burstDelay: 1, predictionFactor: 1.5 },
-  M1014: { burstCount: 12, burstDelay: 1, predictionFactor: 1.2 },
-  Vector: { burstCount: 32, burstDelay: 1, predictionFactor: 1.5 },
-  SCAR: { burstCount: 15, burstDelay: 1, predictionFactor: 1.4 },
-  AK: { burstCount: 13, burstDelay: 1, predictionFactor: 1.3 },
-  default: { burstCount: 20, burstDelay: 1, predictionFactor: 1.4 }
-};
+// Nhận biết động tác vuốt từ người chơi
+game.on("touchmove", (touch) => {
+  if (!isSwiping) {
+    swipeStart = { x: touch.x, y: touch.y };
+    isSwiping = true;
+  }
+});
 
-function getDistance(a, b) {
-  const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
-  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+game.on("touchend", () => {
+  isSwiping = false;
+  currentTarget = null;
+});
+
+function isEnemyVisible(enemy) {
+  return enemy && !enemy.isDead && enemy.isVisible && enemy.distance < config.maxDistance;
 }
 
-function predictHead(enemy) {
-  const v = enemy.velocity || { x: 0, y: 0, z: 0 };
-  const a = enemy.acceleration || { x: 0, y: 0, z: 0 };
-  const predictionFactor = aimConfig.adaptivePrediction ? getDistance(enemy.position, game.player.position) * 0.02 : aimConfig.predictionFactor;
-  return {
-    x: enemy.head.x + v.x * predictionFactor + 0.5 * a.x,
-    y: enemy.head.y + v.y * predictionFactor + 0.5 * a.y,
-    z: enemy.head.z + v.z * predictionFactor + 0.5 * a.z
+function predictHeadPosition(enemy) {
+  const predicted = {
+    x: enemy.head.x + enemy.velocity.x * config.predictionFactor,
+    y: enemy.head.y + enemy.velocity.y * config.predictionFactor + config.headOffsetY,
+    z: enemy.head.z + enemy.velocity.z * config.predictionFactor,
   };
+  return predicted;
 }
 
-function smoothAim(from, to, speed) {
-  return {
-    x: from.x + (to.x - from.x) * speed,
-    y: from.y + (to.y - from.y) * speed,
-    z: from.z + (to.z - from.z) * speed
-  };
-}
-
-function isInHeadZone(crosshair, head) {
-  return getDistance(crosshair, head) <= aimConfig.headRadius;
-}
-
-function scoreTarget(enemy, crosshair) {
-  if (!enemy.head || !enemy.visible || enemy.health <= 0) return -1;
-  const head = predictHead(enemy);
-  if (!isVisible(head)) return -1;
-
-  const dist = getDistance(crosshair, head);
-  const danger = enemy.isAimingAtMe ? 1000 : 0;
-  const healthFactor = (100 - enemy.health) * 10;
-  const movingSpeed = getDistance(enemy.velocity, { x: 0, y: 0, z: 0 }) * 100;
-
-  return 9999 - dist * 5 + danger + healthFactor + movingSpeed;
-}
-
-function isVisible(head) {
-  if (!aimConfig.wallCheck) return true;
-  return !game.raycastObstructed(head);
-}
-
-function getBestTarget(enemies, crosshair) {
-  let best = null;
-  let bestScore = -Infinity;
-  for (const enemy of enemies) {
-    const score = scoreTarget(enemy, crosshair);
-    if (score > bestScore) {
-      best = enemy;
-      bestScore = score;
+function findClosestEnemy() {
+  let closest = null;
+  let minDist = Infinity;
+  for (const enemy of game.enemies) {
+    if (!isEnemyVisible(enemy)) continue;
+    const dist = enemy.distance;
+    if (dist < minDist) {
+      minDist = dist;
+      closest = enemy;
     }
   }
-  return best;
+  return closest;
 }
 
-function applyWeaponProfile() {
-  const weapon = game.getCurrentWeapon?.()?.name || "default";
-  const profile = weaponProfiles[weapon] || weaponProfiles.default;
-  aimConfig.burstCount = profile.burstCount;
-  aimConfig.burstDelay = profile.burstDelay;
-  aimConfig.predictionFactor = profile.predictionFactor;
-}
-
-function triggerSmartBurst(target) {
-  if (burstTimer) clearInterval(burstTimer);
-  applyWeaponProfile();
-
-  let shot = 0;
-  burstTimer = setInterval(() => {
-    if (shot >= aimConfig.burstCount || !target || target.health <= 0) {
-      clearInterval(burstTimer);
-      return;
-    }
-
-    const crosshair = game.getCrosshairPosition();
-    const predictedHead = predictHead(target);
-    const aimPos = smoothAim(crosshair, predictedHead, aimConfig.aimSpeed);
-    game.setCrosshairPosition(aimPos);
-
-    if (isInHeadZone(aimPos, predictedHead)) {
-      console.log(`🎯 GODMODE 🔥 Viên #${shot + 1} ghim đầu`);
-      const bullet = game.fire?.();
-      if (bullet) activeBullets.push({ bullet, target });
-    }
-
-    shot++;
-  }, aimConfig.burstDelay);
-}
-
-function adjustBulletsInAir() {
-  if (!aimConfig.allowBulletRedirect || activeBullets.length === 0) return;
-
-  activeBullets = activeBullets.filter(({ bullet, target }) => {
-    if (!bullet || bullet.hit || target.health <= 0) return false;
-
-    const predictedHead = predictHead(target);
-    const dist = getDistance(bullet.position, predictedHead);
-    if (dist < aimConfig.headRadius * 5) {
-      bullet.direction = smoothAim(bullet.position, predictedHead, 1);
-    }
-    return true;
-  });
+function aimAtTarget(target) {
+  const headPos = predictHeadPosition(target);
+  game.crosshair.aimAt(headPos, config.aimSpeed);
+  if (config.overrideFire) game.fireWeapon();
 }
 
 game.on("tick", () => {
-  const enemies = game.getVisibleEnemies();
-  const crosshair = game.getCrosshairPosition();
-  const target = getBestTarget(enemies, crosshair);
+  if (!isSwiping) return;
 
-  adjustBulletsInAir();
-
-  if (!target) {
-    isLocked = false;
-    return;
+  if (!currentTarget || currentTarget.isDead || !isEnemyVisible(currentTarget)) {
+    currentTarget = findClosestEnemy();
   }
 
-  const predictedHead = predictHead(target);
-  const aimNow = smoothAim(crosshair, predictedHead, aimConfig.aimSpeed);
-  game.setCrosshairPosition(aimNow);
-
-  if (aimConfig.autoFire && aimConfig.lockUntilDeath) {
-    if (isInHeadZone(aimNow, predictedHead)) {
-      if (!isLocked) {
-        isLocked = true;
-        console.log(`🔒 GOD LOCKED: ${target.name || "Enemy"}`);
-        if (aimConfig.fireBurst) {
-          triggerSmartBurst(target);
-        } else {
-          const bullet = game.fire?.();
-          if (bullet) activeBullets.push({ bullet, target });
-        }
-      } else if (target.health <= 0) {
-        console.log("☠️ Kết liễu – enemy deleted");
-        isLocked = false;
-        clearInterval(burstTimer);
-      }
-    } else {
-      isLocked = false;
-    }
+  if (currentTarget) {
+    aimAtTarget(currentTarget);
   }
 });
