@@ -7,7 +7,7 @@
 const aimConfig = {
   aimSpeed: 99,
   headRadius: 99,
-  predictionFactor: 0.6,
+  predictionFactor: 99,
   wallCheck: true,
   autoFire: true,
   lockUntilDeath: true,
