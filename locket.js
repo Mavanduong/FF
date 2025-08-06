@@ -5,7 +5,7 @@
 // ==/UserScript==
 
 const aimConfig = {
-  aimSpeed: 0.42, // tốc độ kéo tâm nhanh hơn nhiều
+  aimSpeed: 1, // tốc độ kéo tâm nhanh hơn nhiều
   headRadius: 0.25,
   predictionFactor: 0.50,
   wallCheck: true,
