@@ -12,7 +12,7 @@ const aimConfig = {
   autoFire: true,
   lockUntilDeath: true,
   fireBurst: true,
-  burstCount: 9,
+  burstCount: 99,
   burstDelay: 99, // nhanh hơn
   burstRandomness: 0, // độ lệch ngẫu nhiên nhỏ tránh phát hiện
 };
