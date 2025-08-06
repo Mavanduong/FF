@@ -1,18 +1,19 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v7.1 – SmartAim LegitLock
-// @version      7.1
-// @description  Ghim đầu tự nhiên, aim thật, re-aim từng viên như người kỹ năng cao
+// @name         AutoHeadlockProMax v7.2 – SmartAutoLock FULL AIM
+// @version      7.2
+// @description  Tự động aim tốc độ cao, ghim đầu 100%, không cần vuốt
 // ==/UserScript==
 
 const aimConfig = {
-  aimSpeed: 0.10, // tốc độ kéo tâm về đầu (0.3 ~ 0.6 là mượt & nhanh)
-  headRadius: 0.28,
-  predictionFactor: 0.48,
-  burstCount: 10,
-  burstDelay: 24,
+  aimSpeed: 0.42, // tốc độ kéo tâm nhanh hơn nhiều
+  headRadius: 0.25,
+  predictionFactor: 0.50,
   wallCheck: true,
   autoFire: true,
-  lockUntilDeath: true
+  lockUntilDeath: true,
+  fireBurst: true,
+  burstCount: 8,
+  burstDelay: 25
 };
 
 let isLocked = false;
@@ -65,8 +66,8 @@ function triggerSmartBurst(target) {
     game.setCrosshairPosition(aimPos);
 
     if (isInHeadZone(aimPos, predictedHead)) {
-      console.log(`🎯 Viên #${shot + 10} đã ghim vào đầu`);
-      // game.fire(); // bỏ comment nếu có hỗ trợ bắn
+      console.log(`🎯 Viên #${shot + 1} ghim đầu`);
+      // game.fire(); // mở nếu có API bắn
     }
 
     shot++;
@@ -99,15 +100,19 @@ game.on("tick", () => {
   if (!target) return;
 
   const predictedHead = predictHead(target);
-  const smooth = smoothAim(crosshair, predictedHead, aimConfig.aimSpeed);
-  game.setCrosshairPosition(smooth);
+  const aimNow = smoothAim(crosshair, predictedHead, aimConfig.aimSpeed);
+  game.setCrosshairPosition(aimNow);
 
-  if (aimConfig.lockUntilDeath && aimConfig.autoFire) {
-    if (isInHeadZone(smooth, predictedHead)) {
+  // Không chờ điều kiện vuốt – auto lock luôn
+  if (aimConfig.autoFire && aimConfig.lockUntilDeath) {
+    if (isInHeadZone(aimNow, predictedHead)) {
       if (!isLocked) {
         isLocked = true;
-        console.log("🔒 Aim chuẩn đầu – bắt đầu găm burst");
-        triggerSmartBurst(target);
+        console.log("🔒 Locked – bắt đầu găm liên tiếp");
+        if (aimConfig.fireBurst) triggerSmartBurst(target);
+        else {
+          // game.fire(); // nếu không dùng burst
+        }
       }
     } else {
       isLocked = false;
