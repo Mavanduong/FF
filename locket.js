@@ -103,6 +103,16 @@ function getBestTarget(enemies, crosshair) {
   return best;
 }
 
+const weaponProfiles = {
+  MP40: { burstCount: 10, burstDelay: 20, predictionFactor: 0.45 },
+  M1014: { burstCount: 4, burstDelay: 60, predictionFactor: 0.35 },
+  Vector: { burstCount: 12, burstDelay: 18, predictionFactor: 0.40 },
+  SCAR: { burstCount: 6, burstDelay: 30, predictionFactor: 0.5 },
+  AK: { burstCount: 5, burstDelay: 35, predictionFactor: 0.55 },
+  default: { burstCount: 8, burstDelay: 25, predictionFactor: 0.5 }
+};
+
+
 game.on("tick", () => {
   const enemies = game.getVisibleEnemies();
   const crosshair = game.getCrosshairPosition();
