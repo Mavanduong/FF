@@ -5,7 +5,7 @@
 // ==/UserScript==
 
 const aimConfig = {
-  aimSpeed: 1.2,
+  aimSpeed: 9,
   headRadius: 0.3,
   predictionFactor: 0.6,
   wallCheck: true,
