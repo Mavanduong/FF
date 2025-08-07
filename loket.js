@@ -1,14 +1,14 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v11.0 - SwipeToLock GodCore
-// @version      11.0
-// @description  Vuốt nhẹ là ghim đầu tuyệt đối. Tự aim, Snap Correction, bỏ qua thân, auto bắn. Cực mượt trên Shadowrocket.
+// @name         AutoHeadlockProMax v11.1 - SwipeToLock GodCore+
+// @version      11.1
+// @description  Vuốt nhẹ là ghim đầu chính xác. Auto Aim, Snap Correction, Bỏ thân, Tự bắn. Siêu mượt trên Shadowrocket.
 // ==/UserScript==
 
 (function () {
   const config = {
-    aimSpeed: 5000, // Tốc độ aim cực nhanh
-    maxDistance: 200, // Phạm vi tối đa
-    headOffset: { x: 0, y: -12 }, // Ưu tiên vùng đầu
+    aimSpeed: 8000,              // Tốc độ aim cực nhanh (buff)
+    maxDistance: 250,            // Phạm vi tối đa xa hơn
+    headOffset: { x: 0, y: -18 },// Ưu tiên vùng đầu (tránh cổ)
     snapCorrection: true,
     predictiveAim: true,
     autoFire: true,
@@ -27,17 +27,23 @@
     const deltaX = touch.clientX - lastTouch.clientX;
     const deltaY = touch.clientY - lastTouch.clientY;
 
-    const swipeThreshold = 5;
+    const swipeThreshold = 3; // Nhạy hơn – chỉ cần vuốt nhẹ là kích hoạt
     if (Math.abs(deltaX) > swipeThreshold || Math.abs(deltaY) > swipeThreshold) {
       activateHeadlock(touch.clientX, touch.clientY);
+      lastTouch = touch; // cập nhật lại vị trí vuốt
     }
   });
 
+  // Tự động khóa lại liên tục nếu đang vuốt
+  setInterval(() => {
+    if (lastTouch) {
+      activateHeadlock(lastTouch.clientX, lastTouch.clientY);
+    }
+  }, 10); // 10ms/ lần → cực nhanh
+
   function activateHeadlock(x, y) {
     const enemy = findNearestEnemy(x, y);
-    if (!enemy) return;
-
-    if (config.objectDetection && enemy.blocked) return;
+    if (!enemy || (config.objectDetection && enemy.blocked)) return;
 
     let headX = enemy.x + config.headOffset.x;
     let headY = enemy.y + config.headOffset.y;
@@ -55,34 +61,33 @@
   }
 
   function findNearestEnemy(x, y) {
-    // GIẢ LẬP - bạn phải thay bằng game API hoặc dữ liệu từ gói mạng
+    // ⚠️ GIẢ LẬP – cần kết nối với game thật hoặc packet
     return {
-      x: x + 20,
-      y: y - 80,
-      vx: 1.5,
-      vy: -1.2,
-      blocked: false // true nếu bị tường chắn
+      x: x + 25,
+      y: y - 85,
+      vx: 2.2,
+      vy: -1.8,
+      blocked: false
     };
   }
 
   function aimAt(x, y) {
     console.log("🔫 Aim locked at:", x, y);
-    // gọi API hoặc hook hàm aim
+    // Gọi API ngắm (hook game hoặc framework)
   }
 
   function fire() {
     console.log("🔥 Auto Fire!");
-    // trigger nút bắn
+    // Trigger nút bắn tự động
   }
 
   function isOnHead(x, y, enemy) {
-    // kiểm tra lệch tâm
     const dx = Math.abs(x - (enemy.x + config.headOffset.x));
     const dy = Math.abs(y - (enemy.y + config.headOffset.y));
-    return dx < 10 && dy < 10;
+    return dx < 6 && dy < 6; // kiểm tra lệch nhỏ hơn để chính xác hơn
   }
 
   function predict(v) {
-    return v * 4; // dự đoán 4 frame tiếp theo
+    return v * 6; // dự đoán mạnh hơn (6 frame)
   }
 })();
