@@ -16,7 +16,7 @@ const ghostAI = {
   stickyLock: true,
   magneticPull: 1000, // Hút cực mạnh vào đầu
   lockHeadEvenIfMissSwipe: true,
-  aimAssistZone: 1.0, // Vùng hỗ trợ aim cực rộng
+  aimAssistZone: 10.0, // Vùng hỗ trợ aim cực rộng
   overrideHumanSwipe: true,
   aimCorrectionRate: 1.0, // Tự điều chỉnh tối đa
   burstMode: "GigaOverload", // Chế độ bắn tối đa
