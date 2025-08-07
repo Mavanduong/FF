@@ -1,100 +1,86 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v12.5-FinalSquadGod
-// @version      12.5
-// @description  Ghim đầu tuyệt đối – Tăng tốc xử lý – Bypass nhiệt – Lock ưu tiên squad – Không thua bot
+// @name         AutoHeadlockProMax v13.0-GodBurstX1000
+// @version      13.0
+// @description  Ghim đầu max lực – Không trượt – Ưu tiên burst vào đầu – Anti lệch – Lock cực nhanh
 // ==/UserScript==
 
-const config = {
-  aimPower: 9999,
-  aimSpeed: 99999,
+const aimSystem = {
+  headRatio: 0.98, // Ưu tiên vùng đầu gần tuyệt đối
+  neckRedirect: true, // Nếu lệch cổ → auto đẩy lên đầu
+  burstControl: true,
+  burstRate: 3, // Bắn 3 viên → reset lock
+  aimSpeed: 9999, // Max tốc độ lock
+  stickyPower: 999, // Độ dính mục tiêu
+  predictionPower: 1.6, // Dự đoán vị trí di chuyển
+  recoilCompensation: true,
+  recoilFactor: 0, // Không lệch
+  humanSwipeDelay: 8, // Delay xử lý vuốt để hợp lý hơn
+  squadLock: true,
+  squadLockPriority: 'closest+danger', // Ưu tiên địch gần và nguy hiểm
   maxDistance: 200,
-  stickyLockRange: 3.0,
-  predictionFactor: 1.75,
-  bulletSpeed: 9999,
-  recoilBypass: true,
-  humanSwipeDelay: 22,
-  heatBypass: true,
-  fireCompensate: true,
-  squadPriority: true
+  aimUpdateRate: 1, // Mỗi tick
+  bulletSpeedBoost: true,
+  quantumFollow: true,
+  wallBypass: true,
 };
 
-let bulletsFired = 0;
+let fireBurstCount = 0;
 
-function random(min, max) {
-  return Math.random() * (max - min) + min;
-}
-
-function getTargetHead(target) {
-  return {
-    x: target.x,
-    y: target.y - target.height * 0.9 // Luôn lấy vị trí đầu
-  };
-}
-
-function calculateAim(player, target) {
-  const head = getTargetHead(target);
-  let dx = head.x - player.x;
-  let dy = head.y - player.y;
-
-  // Bypass recoil spread do heat
-  if (config.heatBypass) {
-    const heat = Math.min(1, bulletsFired / 30);
-    const spread = 0; // Set về 0 nếu muốn 100% không lệch
-    dx += random(-spread, spread);
-    dy += random(-spread, spread);
-  }
-
-  // Dự đoán địch di chuyển
-  dx += target.vx * config.predictionFactor;
-  dy += target.vy * config.predictionFactor;
-
-  return {
-    x: dx * config.aimSpeed,
-    y: dy * config.aimSpeed
-  };
-}
-
-function selectTarget(enemies, player) {
-  let selected = null;
-  let minScore = Infinity;
-
-  for (const enemy of enemies) {
-    if (!enemy.alive || enemy.distance > config.maxDistance) continue;
-
-    let score = enemy.distance;
-
-    if (config.squadPriority) {
-      if (enemy.weapon === 'shotgun') score -= 15;
-      if (enemy.hp < 30) score -= 10;
-      if (enemy.isAimingAt(player)) score -= 20;
-    }
-
-    if (score < minScore) {
-      minScore = score;
-      selected = enemy;
-    }
-  }
-
-  return selected;
-}
-
-function aimAndFire(player, enemies) {
-  const target = selectTarget(enemies, player);
-  if (!target) return;
-
-  const aim = calculateAim(player, target);
-  player.aim(aim.x, aim.y);
-
-  if (player.isFiring) {
-    bulletsFired++;
-    if (config.fireCompensate) player.shotSpread = 0; // Hút về đầu
-    if (config.recoilBypass) player.recoil = 0;
-  } else {
-    bulletsFired = 0;
-  }
-}
-
-// Tick theo từng frame
 game.on('tick', () => {
-  aimAndFire(game.player, game.enemies);
+  const enemy = game.findTarget({
+    priority: aimSystem.squadLockPriority,
+    range: aimSystem.maxDistance,
+    visibility: !aimSystem.wallBypass ? 'visible' : 'any',
+  });
+
+  if (!enemy) return;
+
+  const targetPos = enemy.getPredictedHead(aimSystem.predictionPower);
+
+  // Neck redirect logic
+  if (aimSystem.neckRedirect) {
+    let offsetY = targetPos.y - game.player.aim.y;
+    if (offsetY > 0.2 && offsetY < 0.5) {
+      targetPos.y -= offsetY * 0.95; // Kéo gần lên đầu
+    }
+  }
+
+  // Apply no spread logic
+  if (aimSystem.recoilCompensation) {
+    game.player.spread = 0;
+  }
+
+  // Update aim
+  game.player.aim = game.player.aim.lerp(targetPos, aimSystem.aimSpeed);
+
+  // Sticky Lock
+  if (aimSystem.stickyPower > 0) {
+    game.lockOn(enemy, aimSystem.stickyPower);
+  }
+
+  // Burst Fire Logic
+  if (aimSystem.burstControl && game.player.isFiring) {
+    fireBurstCount++;
+    if (fireBurstCount >= aimSystem.burstRate) {
+      fireBurstCount = 0;
+      game.retarget(enemy); // Reset lock để lock lại mạnh hơn
+    }
+  }
+
+  // Human swipe delay
+  if (aimSystem.humanSwipeDelay > 0 && game.player.isSwiping) {
+    game.delayAimUpdate(aimSystem.humanSwipeDelay);
+  }
+
+  // Bullet Speed Hack (Fake logic)
+  if (aimSystem.bulletSpeedBoost) {
+    game.bulletSpeed = 999999;
+  }
+
+  // Head Lock Quantum Track
+  if (aimSystem.quantumFollow) {
+    let d = enemy.getHeadPosition();
+    game.player.aim.x += (d.x - game.player.aim.x) * 1.5;
+    game.player.aim.y += (d.y - game.player.aim.y) * 1.5;
+  }
 });
