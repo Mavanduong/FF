@@ -1,53 +1,62 @@
 // ==UserScript==
-// @name         GhostAI_SwipeAimTest
-// @version      1.0
-// @description  Ghim tâm về đầu khi vuốt - để test xem game có nhận script hay không
+// @name         GhostAI_SilentAimStrong
+// @version      2.0
+// @description  Ghim tâm mạnh không console – phản ứng ngay khi có enemy API
 // ==/UserScript==
 
-const ghostSwipe = {
-  aimPower: 2.0, // Hệ số ghim tâm
-  aimWhenSwipe: true,
-  lockZone: 8.0, // Vuốt vào vùng này thì sẽ aim
+const GhostAI = {
+  autoAimOnSwipe: true,
+  aimForce: 12.5,     // Ghim cực nhanh & mạnh
+  lockZone: 15.0,     // Vùng aim rộng
+  headTrack: true,
 };
 
-// Hook tick game
+// Tick mỗi frame
 game.on('tick', () => {
-  const target = getClosestEnemy();
-  if (!target || target.isDead) return;
+  const enemy = getTargetEnemy();
+  if (!enemy || enemy.isDead) return;
 
-  const head = target.getHeadPosition();
+  if (!GhostAI.autoAimOnSwipe) return;
+
   const swipe = getSwipeVector();
+  if (!isSwipeDetected(swipe)) return;
 
-  // Nếu có vuốt và bật ghim khi vuốt
-  if (ghostSwipe.aimWhenSwipe && isSwipeDetected(swipe)) {
-    const aimVec = {
-      x: head.x * ghostSwipe.aimPower,
-      y: head.y * ghostSwipe.aimPower,
-    };
-    moveCrosshair(aimVec.x, aimVec.y);
-    console.log("🧲 Ghim tâm khi vuốt vào:", aimVec);
+  const head = enemy.getPredictedHeadPosition();
+  const crosshair = getCrosshairPosition();
+
+  const dx = (head.x - crosshair.x) * GhostAI.aimForce;
+  const dy = (head.y - crosshair.y) * GhostAI.aimForce;
+
+  if (isWithinLockZone(dx, dy)) {
+    moveCrosshair(dx, dy);
   }
 });
 
-// ========== Fake Game API Dưới Đây (Để Test Trong Môi Trường Không Game) ========== //
+// ======= Fake Game Engine APIs (Bạn cần thay bằng API thật nếu có) =======
 
-function getClosestEnemy() {
+function getTargetEnemy() {
   return {
     isDead: false,
-    getHeadPosition: () => ({ x: 1.5, y: 1.8 }),
+    getPredictedHeadPosition: () => ({ x: 3.2, y: 1.75 }),
   };
 }
 
 function getSwipeVector() {
-  // Giả lập người chơi đang vuốt ngang
-  return { dx: 1, dy: 0.2 };
+  return { dx: 1.2, dy: 0.4 }; // Thay bằng swipe thật
 }
 
-function isSwipeDetected(vec) {
-  const length = Math.sqrt(vec.dx ** 2 + vec.dy ** 2);
-  return length > 0.1; // Có vuốt nhẹ là detect
+function isSwipeDetected(v) {
+  return Math.abs(v.dx) + Math.abs(v.dy) > 0.2;
+}
+
+function getCrosshairPosition() {
+  return { x: 0, y: 0 };
 }
 
 function moveCrosshair(dx, dy) {
-  console.log(`🎯 Đang kéo tâm: dx=${dx.toFixed(2)}, dy=${dy.toFixed(2)}`);
+  // Không log gì – ghim thầm lặng
+}
+
+function isWithinLockZone(dx, dy) {
+  return Math.abs(dx) + Math.abs(dy) < GhostAI.lockZone;
 }
