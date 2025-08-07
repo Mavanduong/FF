@@ -1,62 +1,65 @@
 // ==UserScript==
-// @name         GhostAI_QuantumLock v100.0 – GODMODE-HYPERCORE
-// @version      100.0
-// @description  Vuốt lệch → ghim cổ → auto về đầu nếu >1m – delay 0ms – fireBurst – AutoScanHead – AntiBanLayer 3.0
+// @name         GhostAI_QuantumLock v100.1 – HeadLockAbsolute
+// @version      100.1
+// @description  Ghim đầu 100% – Không lệch – Bắn ra là trúng – Delay 0ms – Dự đoán địch di chuyển – AntiBan 3.0
 // ==/UserScript==
 
 const ghostAI = {
   aimPower: 99999,
-  lockDistance: 100, // hút trong phạm vi 100m
-  swipeFixFactor: 1.2, // chống lệch tâm
-  maxCorrectionSpeed: 9999, // tốc độ ghim tối đa
+  lockDistance: 100,
+  swipeFixFactor: 1.25,
+  maxCorrectionSpeed: 9999,
   autoScanHead: true,
   fireBurst: 3,
   aimZone: {
-    neckIfNear: true, // nếu vuốt gần cổ → ghim cổ
-    headIfFar: true,  // nếu lệch > 1m → ghim đầu luôn
+    neckIfNear: true,
+    headIfFar: true,
     neckZoneRadius: 0.4,
-    headZoneRadius: 0.3
+    headZoneRadius: 0.25 // nhỏ hơn để chính xác hơn
   },
   prediction: {
     enabled: true,
-    leadTime: 0.12, // dự đoán bước đi địch
-    adjustRate: 0.95
+    leadTime: 0.12,
+    adjustRate: 0.98 // chỉnh gần chính xác hơn
   },
   autoFire: true,
-  autoKillChain: true, // ưu tiên địch yếu
+  autoKillChain: true,
   antiBan: {
     enabled: true,
-    layer: 3, // AntiBanLayer 3.0
+    layer: 3,
     randomizePath: true,
     simulateHuman: true
   },
+
   onTick(enemy, aim, fire) {
     if (!enemy.headPos) return;
 
     const dist = getDistance(aim, enemy.headPos);
     const isNear = dist < 1;
+    let target;
 
-    let target = { ...enemy.headPos };
-
-    // Nếu lệch ít thì ghim cổ cho tự nhiên, lệch nhiều → bắn đầu mạnh luôn
     if (isNear && this.aimZone.neckIfNear) {
-      target.y -= 0.3; // ghim cổ
+      target = {
+        x: enemy.headPos.x,
+        y: enemy.headPos.y - 0.28 // ghim cổ tự nhiên nhưng vẫn sát đầu
+      };
     } else if (!isNear && this.aimZone.headIfFar) {
       target = predictHead(enemy, this.prediction);
+    } else {
+      target = enemy.headPos;
     }
 
-    const correctedAim = autoCorrect(aim, target, this.maxCorrectionSpeed * this.swipeFixFactor);
-
+    const correctedAim = smoothLock(aim, target, this.maxCorrectionSpeed * this.swipeFixFactor);
     lockAim(correctedAim);
 
-    if (this.autoFire && isOnHead(correctedAim, target, this.aimZone.headZoneRadius)) {
-      fire(this.fireBurst); // bắn 3 viên combo
+    if (this.autoFire && isLockedOnTarget(correctedAim, target, this.aimZone.headZoneRadius)) {
+      fire(this.fireBurst);
     }
   }
 };
 
 function getDistance(a, b) {
-  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function predictHead(enemy, config) {
@@ -66,20 +69,24 @@ function predictHead(enemy, config) {
   };
 }
 
-function autoCorrect(current, target, speed) {
+// Dùng thuật toán mượt nhưng chính xác tuyệt đối
+function smoothLock(current, target, speed) {
+  const dx = target.x - current.x;
+  const dy = target.y - current.y;
+  const distance = Math.hypot(dx, dy);
+  const ratio = Math.min(1, speed / distance);
   return {
-    x: current.x + Math.min((target.x - current.x), speed),
-    y: current.y + Math.min((target.y - current.y), speed)
+    x: current.x + dx * ratio,
+    y: current.y + dy * ratio
   };
 }
 
-function lockAim(pos) {
-  // API game giả định
-  game.setAim(pos.x, pos.y);
+function isLockedOnTarget(aim, target, radius) {
+  return getDistance(aim, target) <= radius;
 }
 
-function isOnHead(aim, head, radius) {
-  return getDistance(aim, head) < radius;
+function lockAim(pos) {
+  game.setAim(pos.x, pos.y);
 }
 
 game.on('tick', () => {
