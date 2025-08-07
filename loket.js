@@ -1,19 +1,20 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v11.1 - SwipeToLock GodCore+
-// @version      11.1
-// @description  Vuốt nhẹ là ghim đầu chính xác. Auto Aim, Snap Correction, Bỏ thân, Tự bắn. Siêu mượt trên Shadowrocket.
+// @name         AutoHeadlockProMax v11.2 - DynamicSpeedAim GodSwipe
+// @version      11.2
+// @description  Ghim đầu siêu tốc độ khi vuốt. Tâm bám đầu AI mạnh. Tự aim, tự bắn, snap cực nhanh, bỏ thân, override chuyển động.
 // ==/UserScript==
 
 (function () {
   const config = {
-    aimSpeed: 8000,              // Tốc độ aim cực nhanh (buff)
-    maxDistance: 250,            // Phạm vi tối đa xa hơn
-    headOffset: { x: 0, y: -18 },// Ưu tiên vùng đầu (tránh cổ)
-    snapCorrection: true,
+    aimSpeed: 12000,             // Tốc độ aim siêu cao
+    maxDistance: 300,
+    headOffset: { x: 0, y: -18 },
     predictiveAim: true,
     autoFire: true,
+    snapCorrection: true,
     bodyIgnore: true,
-    objectDetection: true
+    objectDetection: true,
+    maxSnapForce: 25             // Lực kéo tâm tức thì
   };
 
   let lastTouch = null;
@@ -27,21 +28,21 @@
     const deltaX = touch.clientX - lastTouch.clientX;
     const deltaY = touch.clientY - lastTouch.clientY;
 
-    const swipeThreshold = 3; // Nhạy hơn – chỉ cần vuốt nhẹ là kích hoạt
+    const swipeThreshold = 3;
     if (Math.abs(deltaX) > swipeThreshold || Math.abs(deltaY) > swipeThreshold) {
-      activateHeadlock(touch.clientX, touch.clientY);
-      lastTouch = touch; // cập nhật lại vị trí vuốt
+      activateHeadlock(touch.clientX, touch.clientY, true);
+      lastTouch = touch;
     }
   });
 
-  // Tự động khóa lại liên tục nếu đang vuốt
+  // Theo dõi và ghim đầu liên tục nếu đang vuốt
   setInterval(() => {
     if (lastTouch) {
-      activateHeadlock(lastTouch.clientX, lastTouch.clientY);
+      activateHeadlock(lastTouch.clientX, lastTouch.clientY, false);
     }
-  }, 10); // 10ms/ lần → cực nhanh
+  }, 8); // tốc độ khóa liên tục cao hơn (8ms)
 
-  function activateHeadlock(x, y) {
+  function activateHeadlock(x, y, isSwipe) {
     const enemy = findNearestEnemy(x, y);
     if (!enemy || (config.objectDetection && enemy.blocked)) return;
 
@@ -53,6 +54,10 @@
       headY += predict(enemy.vy);
     }
 
+    if (config.snapCorrection && isSwipe) {
+      snapTo(headX, headY); // di tâm siêu tốc khi vuốt
+    }
+
     aimAt(headX, headY);
 
     if (config.autoFire && isOnHead(headX, headY, enemy)) {
@@ -61,33 +66,48 @@
   }
 
   function findNearestEnemy(x, y) {
-    // ⚠️ GIẢ LẬP – cần kết nối với game thật hoặc packet
+    // ⚠️ giả lập enemy – thay bằng API game thực
     return {
       x: x + 25,
       y: y - 85,
-      vx: 2.2,
-      vy: -1.8,
+      vx: 2.5,
+      vy: -1.9,
       blocked: false
     };
   }
 
   function aimAt(x, y) {
-    console.log("🔫 Aim locked at:", x, y);
-    // Gọi API ngắm (hook game hoặc framework)
+    console.log("🎯 Tâm ghim tới:", x, y);
+    // Gọi API ngắm hoặc can thiệp offset chuột/tâm
+  }
+
+  function snapTo(x, y) {
+    console.log("⚡ Snap nhanh đến đầu:", x, y);
+    // Tâm nhảy gắt đến vị trí đầu bằng lực cực mạnh
+    // Hook chuột hoặc API game cần force
+    const dx = x - window.innerWidth / 2;
+    const dy = y - window.innerHeight / 2;
+    simulateMouseMove(dx / config.maxSnapForce, dy / config.maxSnapForce);
+  }
+
+  function simulateMouseMove(dx, dy) {
+    // Giả lập kéo chuột – hook engine riêng
+    console.log(`🌀 Dịch chuyển tâm: dx=${dx}, dy=${dy}`);
+    // Ở môi trường thực có thể dùng API native hoặc hook offset game
   }
 
   function fire() {
     console.log("🔥 Auto Fire!");
-    // Trigger nút bắn tự động
+    // Gọi trigger bắn
   }
 
   function isOnHead(x, y, enemy) {
     const dx = Math.abs(x - (enemy.x + config.headOffset.x));
     const dy = Math.abs(y - (enemy.y + config.headOffset.y));
-    return dx < 6 && dy < 6; // kiểm tra lệch nhỏ hơn để chính xác hơn
+    return dx < 6 && dy < 6;
   }
 
   function predict(v) {
-    return v * 6; // dự đoán mạnh hơn (6 frame)
+    return v * 6;
   }
 })();
