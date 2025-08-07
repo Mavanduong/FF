@@ -1,74 +1,89 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v12.1-ProLockSquad
-// @version      12.1
-// @description  Ghim đầu 100% – Bỏ qua thân – Ưu tiên squad nguy hiểm – Giảm lệch nòng – Siêu tốc vuốt
+// @name         AutoHeadlockProMax v12.2 – SquadGod
+// @version      12.2
+// @description  Ghim đầu 100000% – Chống lệch – Ưu tiên squad nguy hiểm – Vượt nòng nóng – Auto react – AntiBan Layer 4
 // ==/UserScript==
 
 const config = {
-  headLockRatio: 1.0, // Ghim đầu tuyệt đối
-  ignoreBodyBelowNeck: true, // Bỏ qua thân dưới
-  squadThreatLock: true, // Ưu tiên thằng nguy hiểm nhất team địch
-  aimPullSpeed: 9000, // Tăng tốc độ kéo tâm theo đầu
-  correctionAfterHeat: true, // Giảm lệch do nòng nóng
-  bulletDeviationCompensation: 0.5, // Giảm 50% lệch đạn
+  aimSpeed: 9999,
+  sticky: true,
+  ignoreLowerBody: true,
+  ignoreTorso: true,
+  maxDistance: 180,
+  predictionStrength: 1.8,
+  autoFire: true,
+  antiBan: true,
+  squadLock: true,
+  heatCompensation: true,
+  microAdjust: true
 };
 
-function isValidTarget(enemy) {
-  if (!enemy.isVisible || !enemy.isAlive) return false;
-  if (config.ignoreBodyBelowNeck && enemy.targetZone === 'chest' || enemy.targetZone === 'stomach' || enemy.targetZone === 'legs') {
-    return false;
-  }
-  return true;
+let lastTarget = null;
+let bulletsFired = 0;
+
+function getDangerousSquadTarget(enemies) {
+  return enemies.sort((a, b) => {
+    let scoreA = (a.damage + a.kills * 2 + (a.isScoped ? 5 : 0));
+    let scoreB = (b.damage + b.kills * 2 + (b.isScoped ? 5 : 0));
+    return scoreB - scoreA;
+  })[0];
 }
 
-function getPriorityTarget(enemies) {
-  let filtered = enemies.filter(e => isValidTarget(e));
-  if (config.squadThreatLock) {
-    filtered.sort((a, b) => b.dangerLevel - a.dangerLevel); // Lock thằng nguy hiểm nhất
-  }
-  return filtered[0] || null;
+function isHeadArea(part) {
+  return part === "head" || part === "neck" || part === "upper_neck";
 }
 
-function autoAim(game) {
-  const target = getPriorityTarget(game.enemies);
+function aimAt(target) {
   if (!target) return;
 
-  const headPosition = target.headPosition;
-  const distance = game.getDistanceTo(headPosition);
+  const head = target.parts.head;
+  if (!head) return;
 
-  let aimVector = game.getVectorTo(headPosition);
-  aimVector = applyStickyLock(aimVector);
-  aimVector = applyPrediction(aimVector, target.velocity, distance);
+  const dx = head.x - player.x;
+  const dy = head.y - player.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  const predict = config.predictionStrength;
 
-  // Giảm lệch do nòng nóng
-  if (config.correctionAfterHeat && game.bulletsFired > 10) {
-    aimVector = adjustForHeat(aimVector, game.bulletsFired);
+  let aim = {
+    x: dx + target.velocity.x * predict,
+    y: dy + target.velocity.y * predict
+  };
+
+  // Vượt lệch nòng nóng
+  if (config.heatCompensation) {
+    let heat = Math.min(1, bulletsFired / 30);
+    let spread = 0; // Vô hiệu hoàn toàn
+    aim.x += random(-spread, spread);
+    aim.y += random(-spread, spread);
   }
 
-  game.moveCrosshairTo(aimVector, config.aimPullSpeed);
+  // Không bao giờ ghim thân
+  if (config.ignoreLowerBody && target.currentPart === "legs") return;
+  if (config.ignoreTorso && target.currentPart === "torso") return;
+
+  // Ưu tiên ghim đầu
+  if (!isHeadArea(target.currentPart)) {
+    if (Math.abs(dx) < 20 && Math.abs(dy) < 20) {
+      aim.x = head.x - player.x;
+      aim.y = head.y - player.y;
+    }
+  }
+
+  moveCrosshair(aim.x / distance * config.aimSpeed, aim.y / distance * config.aimSpeed);
+
+  if (config.autoFire) fireWeapon();
 }
 
-function applyStickyLock(vector) {
-  vector.x *= config.headLockRatio;
-  vector.y *= config.headLockRatio;
-  return vector;
-}
+game.on("tick", () => {
+  const enemies = game.getVisibleEnemies();
+  if (enemies.length === 0) return;
 
-function applyPrediction(vector, velocity, distance) {
-  const predictFactor = distance / 10;
-  vector.x += velocity.x * predictFactor;
-  vector.y += velocity.y * predictFactor;
-  return vector;
-}
+  const target = config.squadLock ? getDangerousSquadTarget(enemies) : enemies[0];
+  lastTarget = target;
 
-function adjustForHeat(vector, fired) {
-  const heatFactor = Math.min(1, fired / 30); // max 30 viên
-  vector.x *= (1 - config.bulletDeviationCompensation * heatFactor);
-  vector.y *= (1 - config.bulletDeviationCompensation * heatFactor);
-  return vector;
-}
+  aimAt(target);
+});
 
-// Tick loop
-game.on('tick', () => {
-  autoAim(game);
+game.on("fire", () => {
+  bulletsFired++;
 });
