@@ -5,19 +5,67 @@
 // ==/UserScript==
 
 const config = {
-  aimSpeed: 4000, // Gấp đôi tốc độ cũ
-  maxDistance: 150, // Xa hơn
-  targetSticky: true,
-  overrideFire: true,
-  lockWhileScoped: true,
-  lockWhileHipfire: true,
+  aimSpeed: 4000,             // Tốc độ aim cực nhanh
+  maxDistance: 150,           // Khoảng cách tối đa
+  targetSticky: true,         // Dính mục tiêu
+  overrideFire: true,         // Tự bắn
+  lockWhileScoped: true,      // Lock khi bật ngắm
+  lockWhileHipfire: true,     // Lock khi bắn không ngắm
 };
 
 let currentTarget = null;
 let isSwiping = false;
 
-// Vuốt tay
-game.on("touchmove", (touch) => {
+// 🎯 Kiểm tra enemy còn sống và thấy được
+function isEnemyVisible(enemy) {
+  return enemy && !enemy.isDead && enemy.isVisible && enemy.distance <= config.maxDistance;
+}
+
+// 🎯 Dự đoán đầu địch dựa theo chuyển động
+function getPredictionFactor(enemy) {
+  if (enemy.isJumping) return 1.75;
+  if (enemy.isCrouching) return 1.5;
+  if (enemy.getSpeed && enemy.getSpeed() > 3.5) return 1.65;
+  return 1.35;
+}
+
+function predictHeadPosition(enemy) {
+  const factor = getPredictionFactor(enemy);
+  return {
+    x: enemy.head.x + enemy.velocity.x * factor,
+    y: enemy.head.y + enemy.velocity.y * factor - 0.35,
+    z: enemy.head.z + enemy.velocity.z * factor,
+  };
+}
+
+// 🎯 Tìm địch gần nhất
+function findClosestEnemy() {
+  let closest = null;
+  let minDist = Infinity;
+
+  for (const enemy of game.enemies) {
+    if (!isEnemyVisible(enemy)) continue;
+    if (enemy.distance < minDist) {
+      minDist = enemy.distance;
+      closest = enemy;
+    }
+  }
+
+  return closest;
+}
+
+// 🎯 Ghim đầu
+function aimAtTarget(enemy) {
+  const predictedHead = predictHeadPosition(enemy);
+  game.crosshair.aimAt(predictedHead, config.aimSpeed);
+
+  if (config.overrideFire) {
+    game.fireWeapon();
+  }
+}
+
+// 🧠 Vuốt = Aim
+game.on("touchmove", () => {
   isSwiping = true;
 });
 
@@ -26,49 +74,7 @@ game.on("touchend", () => {
   currentTarget = null;
 });
 
-function isEnemyVisible(enemy) {
-  return enemy && !enemy.isDead && enemy.isVisible && enemy.distance < config.maxDistance;
-}
-
-// ⚙️ Prediction động dựa theo trạng thái địch
-function getPredictionFactor(enemy) {
-  if (enemy.isJumping) return 1.75;
-  if (enemy.isCrouching) return 1.5;
-  if (enemy.getSpeed() > 3.5) return 1.65;
-  return 1.35;
-}
-
-function predictHeadPosition(enemy) {
-  const factor = getPredictionFactor(enemy);
-  const predicted = {
-    x: enemy.head.x + enemy.velocity.x * factor,
-    y: enemy.head.y + enemy.velocity.y * factor - 0.35,
-    z: enemy.head.z + enemy.velocity.z * factor,
-  };
-  return predicted;
-}
-
-function findClosestEnemy() {
-  let closest = null;
-  let minDist = Infinity;
-  for (const enemy of game.enemies) {
-    if (!isEnemyVisible(enemy)) continue;
-    const dist = enemy.distance;
-    if (dist < minDist) {
-      minDist = dist;
-      closest = enemy;
-    }
-  }
-  return closest;
-}
-
-function aimAtTarget(target) {
-  const headPos = predictHeadPosition(target);
-  game.crosshair.aimAt(headPos, config.aimSpeed);
-  if (config.overrideFire) game.fireWeapon();
-}
-
-// Tick loop
+// ⏱ Tick game loop
 game.on("tick", () => {
   if (!isSwiping) return;
 
@@ -80,5 +86,3 @@ game.on("tick", () => {
     aimAtTarget(currentTarget);
   }
 });
-
-
