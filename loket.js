@@ -8,7 +8,7 @@ const aimSystem = {
   headRatio: 0.98, // Ưu tiên vùng đầu gần tuyệt đối
   neckRedirect: true, // Nếu lệch cổ → auto đẩy lên đầu
   burstControl: true,
-  burstRate: 3, // Bắn 3 viên → reset lock
+  burstRate: 6, // Bắn 3 viên → reset lock
   aimSpeed: 9999, // Max tốc độ lock
   stickyPower: 999, // Độ dính mục tiêu
   predictionPower: 1.6, // Dự đoán vị trí di chuyển
