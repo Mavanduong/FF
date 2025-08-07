@@ -8,13 +8,13 @@
   const config = {
     aimSpeed: Infinity, // Ghim đầu ngay lập tức
     maxDistance: 999999, // Quét toàn bản đồ
-    headOffset: { x: 0, y: -20 }, // Ghim trán tuyệt đối
+    headOffset: { x: 0, y: -30 }, // Ghim trán tuyệt đối
     predictiveAim: true,
     autoFire: true,
     snapCorrection: true,
     bodyIgnore: true,
     objectDetection: false, // Bỏ qua cả vật cản nếu cần
-    maxSnapForce: 999999 // Tâm bay tức thì
+    maxSnapForce: 999 // Tâm bay tức thì
   };
 
   let lastTouch = null;
@@ -28,7 +28,7 @@
     const deltaX = touch.clientX - lastTouch.clientX;
     const deltaY = touch.clientY - lastTouch.clientY;
 
-    const swipeThreshold = 1; // Vuốt cực nhẹ là ăn
+    const swipeThreshold = 0,1; // Vuốt cực nhẹ là ăn
     if (Math.abs(deltaX) > swipeThreshold || Math.abs(deltaY) > swipeThreshold) {
       activateHeadlock(touch.clientX, touch.clientY, true);
       lastTouch = touch;
@@ -98,10 +98,10 @@
   function isOnHead(x, y, enemy) {
     const dx = Math.abs(x - (enemy.x + config.headOffset.x));
     const dy = Math.abs(y - (enemy.y + config.headOffset.y));
-    return dx < 4 && dy < 4; // Cực kỳ chặt
+    return dx < 1 && dy < 1; // Cực kỳ chặt
   }
 
   function predict(v) {
-    return v * 9; // Dự đoán siêu xa
+    return v * 99; // Dự đoán siêu xa
   }
 })();
