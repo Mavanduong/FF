@@ -1,26 +1,24 @@
 // ==UserScript==
-// @name         GhostAI_QuantumLock v100.1 – HeadLockAbsolute
-// @version      100.1
-// @description  Ghim đầu 100% – Không lệch – Bắn ra là trúng – Delay 0ms – Dự đoán địch di chuyển – AntiBan 3.0
+// @name         GhostAI_QuantumLock v100.9-GigaBurst_Overload
+// @version      100.9
+// @description  Ghim đầu liên tục – burst toàn băng – delay 0ms – bất chấp ping cao – lock max lực cực nhanh
 // ==/UserScript==
 
 const ghostAI = {
-  aimPower: 99999,
+  aimPower: Infinity,
   lockDistance: 100,
-  swipeFixFactor: 1.25,
-  maxCorrectionSpeed: 9999,
-  autoScanHead: true,
-  fireBurst: 3,
+  swipeFixFactor: 2.5, // mạnh hơn để kéo nhanh hơn cả lag
+  maxCorrectionSpeed: Infinity,
+  fireBurst: 30, // bắn full băng
   aimZone: {
-    neckIfNear: true,
+    neckIfNear: false, // bỏ ghim cổ – luôn ghim đầu
     headIfFar: true,
-    neckZoneRadius: 0.4,
-    headZoneRadius: 0.25 // nhỏ hơn để chính xác hơn
+    headZoneRadius: 0.2 // cực nhỏ – chuẩn đầu
   },
   prediction: {
     enabled: true,
-    leadTime: 0.12,
-    adjustRate: 0.98 // chỉnh gần chính xác hơn
+    leadTime: 0.16, // dự đoán mạnh hơn
+    adjustRate: 1.0 // chính xác tuyệt đối
   },
   autoFire: true,
   autoKillChain: true,
@@ -34,26 +32,16 @@ const ghostAI = {
   onTick(enemy, aim, fire) {
     if (!enemy.headPos) return;
 
-    const dist = getDistance(aim, enemy.headPos);
-    const isNear = dist < 1;
-    let target;
+    // Luôn lock đầu – không cần kiểm tra gần/xa
+    const target = predictHead(enemy, this.prediction);
 
-    if (isNear && this.aimZone.neckIfNear) {
-      target = {
-        x: enemy.headPos.x,
-        y: enemy.headPos.y - 0.28 // ghim cổ tự nhiên nhưng vẫn sát đầu
-      };
-    } else if (!isNear && this.aimZone.headIfFar) {
-      target = predictHead(enemy, this.prediction);
-    } else {
-      target = enemy.headPos;
-    }
-
-    const correctedAim = smoothLock(aim, target, this.maxCorrectionSpeed * this.swipeFixFactor);
+    // Ghim nhanh tuyệt đối
+    const correctedAim = instantLock(aim, target);
     lockAim(correctedAim);
 
+    // Bắn khi đang cực gần vùng đầu
     if (this.autoFire && isLockedOnTarget(correctedAim, target, this.aimZone.headZoneRadius)) {
-      fire(this.fireBurst);
+      fire(this.fireBurst); // bắn nguyên băng
     }
   }
 };
@@ -69,16 +57,9 @@ function predictHead(enemy, config) {
   };
 }
 
-// Dùng thuật toán mượt nhưng chính xác tuyệt đối
-function smoothLock(current, target, speed) {
-  const dx = target.x - current.x;
-  const dy = target.y - current.y;
-  const distance = Math.hypot(dx, dy);
-  const ratio = Math.min(1, speed / distance);
-  return {
-    x: current.x + dx * ratio,
-    y: current.y + dy * ratio
-  };
+// Lock ngay lập tức – không nội suy – max ping vẫn ghim
+function instantLock(current, target) {
+  return { x: target.x, y: target.y };
 }
 
 function isLockedOnTarget(aim, target, radius) {
