@@ -6,15 +6,15 @@
 
 (function () {
   const config = {
-    aimSpeed: 12000,             // Tốc độ aim siêu cao
-    maxDistance: 300,
+    aimSpeed: 99999999999999,             // Tốc độ aim siêu cao
+    maxDistance: 3000,
     headOffset: { x: 0, y: -18 },
     predictiveAim: true,
     autoFire: true,
     snapCorrection: true,
     bodyIgnore: true,
     objectDetection: true,
-    maxSnapForce: 25             // Lực kéo tâm tức thì
+    maxSnapForce: 2000             // Lực kéo tâm tức thì
   };
 
   let lastTouch = null;
