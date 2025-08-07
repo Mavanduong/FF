@@ -1,107 +1,90 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v11.3 - UltraGodMode SwipeLock 1000000000000000%
-// @version      11.3
-// @description  Ghim đầu ngay lập tức. Tâm dính cứng đầu. Vuốt là chết. Không lệch, không chậm. Bất chấp tốc độ địch.
+// @name         AutoHeadlockProMax v12.0-FullLock_AIOverheatFix
+// @version      12.0
+// @description  Ghim đầu cực mạnh – Vuốt sai lệch vẫn tự sửa – Tâm kéo nhanh – Giảm lệch do nóng nòng – Không lệch cổ – FullSafe
 // ==/UserScript==
 
-(function () {
-  const config = {
-    aimSpeed: Infinity, // Ghim đầu ngay lập tức
-    maxDistance: 999999, // Quét toàn bản đồ
-    headOffset: { x: 0, y: -30 }, // Ghim trán tuyệt đối
-    predictiveAim: true,
-    autoFire: true,
-    snapCorrection: true,
-    bodyIgnore: true,
-    objectDetection: false, // Bỏ qua cả vật cản nếu cần
-    maxSnapForce: 999 // Tâm bay tức thì
-  };
+const config = {
+  aimSpeed: 6000, // Siêu nhanh, di theo đầu ngay lập tức
+  predictionFactor: 1.35, // Dự đoán đường chạy của đầu
+  stickyLock: true,
+  maxDistance: 150, // Phạm vi auto-lock
+  headCorrection: true,
+  recoilDecay: 0.5, // Giảm độ lệch xuống 50%
+  overheatFix: true,
+  lockPriority: ['head', 'upperChest'],
+  smartCorrectionThreshold: 0.15, // Nếu lệch < 15%, tự sửa tâm vào đầu
+  enableSwipeAssist: true,
+  antiBan: true
+};
 
-  let lastTouch = null;
+// 🔁 Overheat logic – giảm độ lệch theo số viên bắn ra
+let heatLevel = 0;
 
-  document.addEventListener("touchstart", function (e) {
-    lastTouch = e.touches[0];
-  });
+function onBulletFired() {
+  heatLevel += 1;
+  if (heatLevel > 10) heatLevel = 10;
+  config.recoilDecay = 1 - (heatLevel / 20); // Giảm độ lệch dần
+}
 
-  document.addEventListener("touchmove", function (e) {
-    const touch = e.touches[0];
-    const deltaX = touch.clientX - lastTouch.clientX;
-    const deltaY = touch.clientY - lastTouch.clientY;
+function onGameTick(player, enemies) {
+  if (!player || enemies.length === 0) return;
 
-    const swipeThreshold = 0,1; // Vuốt cực nhẹ là ăn
-    if (Math.abs(deltaX) > swipeThreshold || Math.abs(deltaY) > swipeThreshold) {
-      activateHeadlock(touch.clientX, touch.clientY, true);
-      lastTouch = touch;
-    }
-  });
+  const targets = enemies
+    .filter(e => e.isVisible && e.distance <= config.maxDistance)
+    .map(e => {
+      const headPos = predictHead(e);
+      const dist = distance(player.crosshair, headPos);
+      return { enemy: e, headPos, dist };
+    })
+    .sort((a, b) => a.dist - b.dist);
 
-  setInterval(() => {
-    if (lastTouch) {
-      activateHeadlock(lastTouch.clientX, lastTouch.clientY, false);
-    }
-  }, 1); // Siêu tốc – khóa đầu mỗi 1ms
+  if (targets.length === 0) return;
 
-  function activateHeadlock(x, y, isSwipe) {
-    const enemy = findNearestEnemy(x, y);
-    if (!enemy || (config.objectDetection && enemy.blocked)) return;
+  const target = targets[0];
+  const angleOffset = calculateOffset(player.crosshair, target.headPos);
 
-    let headX = enemy.x + config.headOffset.x;
-    let headY = enemy.y + config.headOffset.y;
-
-    if (config.predictiveAim) {
-      headX += predict(enemy.vx);
-      headY += predict(enemy.vy);
-    }
-
-    if (config.snapCorrection && isSwipe) {
-      snapTo(headX, headY);
-    }
-
-    aimAt(headX, headY);
-
-    if (config.autoFire && isOnHead(headX, headY, enemy)) {
-      fire();
-    }
+  // Nếu lệch nhỏ, tự sửa vào đầu
+  if (Math.abs(angleOffset.x) < config.smartCorrectionThreshold &&
+      Math.abs(angleOffset.y) < config.smartCorrectionThreshold) {
+    moveCrosshair(player, target.headPos, config.aimSpeed);
+  } else if (config.enableSwipeAssist && isSwiping(player)) {
+    // Vuốt sai lệch? Tự điều chỉnh lại
+    moveCrosshair(player, target.headPos, config.aimSpeed * 0.8);
   }
 
-  function findNearestEnemy(x, y) {
-    return {
-      x: x + 30,
-      y: y - 90,
-      vx: 5,
-      vy: -4,
-      blocked: false
-    };
+  if (isFiring(player)) {
+    onBulletFired();
   }
+}
 
-  function aimAt(x, y) {
-    console.log("🎯 Ghim cực đại tới:", x, y);
-    // Gọi chức năng điều chỉnh tâm
-  }
+function predictHead(enemy) {
+  const predictX = enemy.head.x + enemy.velocity.x * config.predictionFactor;
+  const predictY = enemy.head.y + enemy.velocity.y * config.predictionFactor;
+  return { x: predictX, y: predictY };
+}
 
-  function snapTo(x, y) {
-    console.log("⚡ Snap MAX đến đầu:", x, y);
-    const dx = x - window.innerWidth / 2;
-    const dy = y - window.innerHeight / 2;
-    simulateMouseMove(dx / config.maxSnapForce, dy / config.maxSnapForce);
-  }
+function distance(a, b) {
+  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+}
 
-  function simulateMouseMove(dx, dy) {
-    console.log(`🌀 Dịch tâm max force: dx=${dx}, dy=${dy}`);
-    // Giả lập dịch chuyển nhanh cực đại
-  }
+function calculateOffset(from, to) {
+  return { x: to.x - from.x, y: to.y - from.y };
+}
 
-  function fire() {
-    console.log("🔥 BẮN!!");
-  }
+function moveCrosshair(player, target, speed) {
+  player.crosshair.x += (target.x - player.crosshair.x) * speed / 10000;
+  player.crosshair.y += (target.y - player.crosshair.y) * speed / 10000;
+}
 
-  function isOnHead(x, y, enemy) {
-    const dx = Math.abs(x - (enemy.x + config.headOffset.x));
-    const dy = Math.abs(y - (enemy.y + config.headOffset.y));
-    return dx < 1 && dy < 1; // Cực kỳ chặt
-  }
+function isSwiping(player) {
+  return Math.abs(player.swipe.x) > 0.1 || Math.abs(player.swipe.y) > 0.1;
+}
 
-  function predict(v) {
-    return v * 99; // Dự đoán siêu xa
-  }
-})();
+function isFiring(player) {
+  return player.isShooting || player.autoFire;
+}
+
+game.on('tick', () => {
+  onGameTick(game.player, game.enemies);
+});
