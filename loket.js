@@ -1,147 +1,131 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v11.1-FullSmoothFollow
-// @version      11.1
-// @description  Ghim đầu AI siêu mượt theo từng loại tâm – Vuốt là lock – Có AntiBan và TestMode
+// @name         AutoHeadlock v12.0 - AbsoluteHeadOnlyLock
+// @version      12.0
+// @description  Vuốt là ghim đầu – không lệch – không thân – chính xác tuyệt đối
 // ==/UserScript==
 
 const config = {
   scopes: {
-    hipfire: { aimSpeed: 3000, sticky: true, predictFactor: 1.25 },
-    redDot:  { aimSpeed: 3500, sticky: true, predictFactor: 1.35 },
-    "2x":    { aimSpeed: 4000, sticky: true, predictFactor: 1.45 },
-    "4x":    { aimSpeed: 4500, sticky: true, predictFactor: 1.55 },
-    sniper:  { aimSpeed: 5000, sticky: true, predictFactor: 1.7 },
+    hipfire: { aimSpeed: 3200, predictFactor: 1.2 },
+    redDot:  { aimSpeed: 3500, predictFactor: 1.35 },
+    "2x":    { aimSpeed: 3800, predictFactor: 1.5 },
+    "4x":    { aimSpeed: 4200, predictFactor: 1.65 },
+    sniper:  { aimSpeed: 4700, predictFactor: 1.8 },
   },
-  maxDistance: 180,
+  maxDistance: 200,
   overrideFire: true,
+  snapThreshold: 0.5,  // Nếu lệch khỏi đầu > 0.5m thì snap lại ngay
   antiBan: true,
   testMode: true,
 };
 
 let currentTarget = null;
-let isSwiping = false;
 let lastAimPos = null;
+let isSwiping = false;
 
-// 🧪 Mock game nếu test
 if (typeof game === "undefined" && config.testMode) {
-  console.log("🧪 [TEST MODE] Đang tạo giả lập game...");
+  console.log("🧪 [TEST MODE] Khởi tạo môi trường giả lập...");
   game = {
     enemies: [{
       isDead: false,
       isVisible: true,
-      distance: 100,
-      head: { x: 0, y: 1.6, z: 0 },
-      velocity: { x: 0.5, y: 0, z: 0.2 },
+      distance: 120,
+      head: { x: 0.66, y: 1.65, z: 0.22 },
+      velocity: { x: 0.3, y: 0.1, z: -0.15 },
     }],
     crosshair: {
       scopeType: "redDot",
-      aimAt: (pos, speed) => console.log(`🎯 Aim at`, pos, `Speed: ${speed}`),
+      aimAt: (pos, speed) => console.log("🎯 Aim HEAD at", pos, "Speed:", speed),
     },
     fireWeapon: () => console.log("🔫 Fired!"),
-    on: (event, callback) => {
-      console.log(`📲 Listening: ${event}`);
-      if (event === "tick") setInterval(callback, 100);
-      if (event === "touchmove") setTimeout(callback, 1000);
-      if (event === "touchend") setTimeout(callback, 3000);
+    on: (evt, cb) => {
+      if (evt === "tick") setInterval(cb, 100);
+      if (evt === "touchmove") setTimeout(cb, 500);
+      if (evt === "touchend") setTimeout(cb, 2500);
     },
   };
 }
 
-// 🧠 AntiBan Delay
-function antiBanSafeDelay() {
-  if (config.antiBan) {
-    const delay = Math.random() * 200 + 100;
-    return new Promise(resolve => setTimeout(resolve, delay));
-  }
-  return Promise.resolve();
+function antiBanDelay() {
+  return config.antiBan
+    ? new Promise(res => setTimeout(res, Math.random() * 120 + 80))
+    : Promise.resolve();
 }
 
-// 🎯 Kiểm tra địch
 function isEnemyVisible(enemy) {
   return enemy && !enemy.isDead && enemy.isVisible && enemy.distance <= config.maxDistance;
 }
 
-// 🎯 Lấy loại scope hiện tại
 function getCurrentScopeType() {
   const scope = game.crosshair.scopeType;
   return config.scopes[scope] ? scope : "hipfire";
 }
 
-// 🎯 Dự đoán vị trí đầu
-function predictHeadPosition(enemy, predictFactor) {
+function predictHead(enemy, factor) {
   return {
-    x: enemy.head.x + enemy.velocity.x * predictFactor,
-    y: enemy.head.y + enemy.velocity.y * predictFactor - 0.35,
-    z: enemy.head.z + enemy.velocity.z * predictFactor,
+    x: enemy.head.x + enemy.velocity.x * factor,
+    y: enemy.head.y + enemy.velocity.y * factor,
+    z: enemy.head.z + enemy.velocity.z * factor,
   };
 }
 
-// 🧲 Lerp = Mượt
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-function smoothMove(from, to, speed) {
-  return {
-    x: lerp(from.x, to.x, speed),
-    y: lerp(from.y, to.y, speed),
-    z: lerp(from.z, to.z, speed),
-  };
+function distance3D(a, b) {
+  return Math.sqrt(
+    Math.pow(a.x - b.x, 2) +
+    Math.pow(a.y - b.y, 2) +
+    Math.pow(a.z - b.z, 2)
+  );
 }
 
-// 🎯 Tìm địch gần nhất
-function findClosestEnemy() {
-  let closest = null;
+function findNearestEnemy() {
   let minDist = Infinity;
-  for (const enemy of game.enemies) {
-    if (!isEnemyVisible(enemy)) continue;
-    if (enemy.distance < minDist) {
-      minDist = enemy.distance;
-      closest = enemy;
+  let best = null;
+  for (const e of game.enemies) {
+    if (!isEnemyVisible(e)) continue;
+    if (e.distance < minDist) {
+      minDist = e.distance;
+      best = e;
     }
   }
-  return closest;
+  return best;
 }
 
-// 🎯 Aim mượt vào đầu
-async function aimAtTarget(enemy) {
+async function aimHeadOnly(enemy) {
   const scope = getCurrentScopeType();
-  const scopeConfig = config.scopes[scope];
-  const predictedHead = predictHeadPosition(enemy, scopeConfig.predictFactor);
+  const { aimSpeed, predictFactor } = config.scopes[scope];
+  const head = predictHead(enemy, predictFactor);
 
-  if (!lastAimPos) lastAimPos = predictedHead;
-  const smoothedPos = smoothMove(lastAimPos, predictedHead, 0.2); // 0.2 là độ mượt
-  lastAimPos = smoothedPos;
+  // Nếu lệch đầu thì snap lại
+  if (!lastAimPos || distance3D(lastAimPos, head) > config.snapThreshold) {
+    lastAimPos = head;
+  }
 
-  await antiBanSafeDelay();
-
-  game.crosshair.aimAt(smoothedPos, scopeConfig.aimSpeed);
+  await antiBanDelay();
+  game.crosshair.aimAt(lastAimPos, aimSpeed);
 
   if (config.overrideFire) {
     game.fireWeapon();
   }
 }
 
-// 🎮 Vuốt = bắt đầu
 game.on("touchmove", () => {
   isSwiping = true;
 });
 
-// 🛑 Ngừng vuốt = reset
 game.on("touchend", () => {
   isSwiping = false;
   currentTarget = null;
   lastAimPos = null;
 });
 
-// 🔁 Tick mỗi 100ms
 game.on("tick", async () => {
   if (!isSwiping) return;
 
   if (!currentTarget || currentTarget.isDead || !isEnemyVisible(currentTarget)) {
-    currentTarget = findClosestEnemy();
+    currentTarget = findNearestEnemy();
   }
 
   if (currentTarget) {
-    await aimAtTarget(currentTarget);
+    await aimHeadOnly(currentTarget);
   }
 });
