@@ -1,62 +1,67 @@
 // ==UserScript==
-// @name         GhostAI_SilentAimStrong
-// @version      2.0
-// @description  Ghim tâm mạnh không console – phản ứng ngay khi có enemy API
+// @name         GhostAI_AutoCorrectHeadshot v3.0
+// @version      3.0
+// @description  Tự điều chỉnh mọi viên đạn lệch bay thẳng vào đầu địch – siêu ghim không cần vuốt
 // ==/UserScript==
 
-const GhostAI = {
-  autoAimOnSwipe: true,
-  aimForce: 12.5,     // Ghim cực nhanh & mạnh
-  lockZone: 15.0,     // Vùng aim rộng
-  headTrack: true,
+const ghostAI = {
+  aimPower: 20.0,              // Ghim siêu mạnh
+  bulletCorrection: true,      // Bật chỉnh đạn lệch
+  autoFire: true,              // Tự bắn nếu trúng đầu
+  fireBurst: 5,                // Bắn loạt 5 viên
+  reAimEachBullet: true,       // Re-aim mỗi viên
+  lockHeadAlways: true,        // Luôn ghim đầu
+  delayBetweenBullets: 0,      // Không delay
+  correctEveryTick: true,      // Tự sửa đạn từng tick
 };
 
 // Tick mỗi frame
 game.on('tick', () => {
-  const enemy = getTargetEnemy();
-  if (!enemy || enemy.isDead) return;
+  const target = getLockedEnemy();
+  if (!target || target.isDead) return;
 
-  if (!GhostAI.autoAimOnSwipe) return;
+  const head = target.getPredictedHeadPosition();
 
-  const swipe = getSwipeVector();
-  if (!isSwipeDetected(swipe)) return;
-
-  const head = enemy.getPredictedHeadPosition();
-  const crosshair = getCrosshairPosition();
-
-  const dx = (head.x - crosshair.x) * GhostAI.aimForce;
-  const dy = (head.y - crosshair.y) * GhostAI.aimForce;
-
-  if (isWithinLockZone(dx, dy)) {
-    moveCrosshair(dx, dy);
+  if (ghostAI.correctEveryTick) {
+    for (let i = 0; i < ghostAI.fireBurst; i++) {
+      setTimeout(() => {
+        correctBulletAim(head);
+        if (ghostAI.autoFire) shoot();
+      }, i * ghostAI.delayBetweenBullets);
+    }
   }
 });
 
-// ======= Fake Game Engine APIs (Bạn cần thay bằng API thật nếu có) =======
+// ======= Core Auto-Correction Logic =======
+function correctBulletAim(headPos) {
+  const bullet = getNextBulletTrajectory(); // Vị trí viên đạn sắp bắn
+  const dx = headPos.x - bullet.x;
+  const dy = headPos.y - bullet.y;
 
-function getTargetEnemy() {
+  const moveX = dx * ghostAI.aimPower;
+  const moveY = dy * ghostAI.aimPower;
+
+  moveCrosshair(moveX, moveY);
+}
+
+// ======= Fake API Stub – cần thay bằng API thật nếu có =======
+
+function getLockedEnemy() {
   return {
     isDead: false,
-    getPredictedHeadPosition: () => ({ x: 3.2, y: 1.75 }),
+    getPredictedHeadPosition: () => ({ x: 3.3, y: 1.75 }),
   };
 }
 
-function getSwipeVector() {
-  return { dx: 1.2, dy: 0.4 }; // Thay bằng swipe thật
-}
-
-function isSwipeDetected(v) {
-  return Math.abs(v.dx) + Math.abs(v.dy) > 0.2;
-}
-
-function getCrosshairPosition() {
-  return { x: 0, y: 0 };
+function getNextBulletTrajectory() {
+  // Giả lập viên đạn lệch
+  return { x: 1.2, y: 1.2 };
 }
 
 function moveCrosshair(dx, dy) {
-  // Không log gì – ghim thầm lặng
+  // Không log – hoạt động im lặng
 }
 
-function isWithinLockZone(dx, dy) {
-  return Math.abs(dx) + Math.abs(dy) < GhostAI.lockZone;
+function shoot() {
+  // Giả lập hành động bắn – không cần log
 }
