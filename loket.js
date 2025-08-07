@@ -8,12 +8,12 @@ const config = {
   aimSpeed: 6000, // Siêu nhanh, di theo đầu ngay lập tức
   predictionFactor: 1.35, // Dự đoán đường chạy của đầu
   stickyLock: true,
-  maxDistance: 150, // Phạm vi auto-lock
+  maxDistance: 9999, // Phạm vi auto-lock
   headCorrection: true,
-  recoilDecay: 0.5, // Giảm độ lệch xuống 50%
+  recoilDecay: 0, // Giảm độ lệch xuống 50%
   overheatFix: true,
   lockPriority: ['head', 'upperChest'],
-  smartCorrectionThreshold: 0.15, // Nếu lệch < 15%, tự sửa tâm vào đầu
+  smartCorrectionThreshold: 9999, // Nếu lệch < 15%, tự sửa tâm vào đầu
   enableSwipeAssist: true,
   antiBan: true
 };
