@@ -1,42 +1,58 @@
 // ==UserScript==
-// @name         FF_AutoAim_NoConsole_v1.0
-// @version      1.0
-// @description  Ghim đầu khi vuốt – Không console – Max lực hút
+// @name         GhostAI_AutoHeadLock_FullMagnetic_v200.0-Final
+// @version      200.0
+// @description  Ghim toàn băng đạn vào đầu – tất cả vũ khí – max lực – delay 0ms – auto fix lệch
 // ==/UserScript==
 
-(() => {
-  const aimSettings = {
-    enabled: true,
-    aimStrength: 9999,
-    headOffset: { x: 0, y: -0.35 }, // Gần như ghim thẳng đầu
-    prediction: true,
-    autoCorrect: true,
-  };
+const ghostAI = {
+  lockPower: 9999,
+  stickyRadius: 3.0, // Tầm hút đầu dù lệch
+  predictOffset: true,
+  supportAllWeapons: true,
+  dynamicAdjust: true,
+  multiBulletCorrection: true,
+  wallBypass: true,
+};
 
-  function isEnemy(target) {
-    return target && target.isVisible && target.type === 'enemy';
-  }
+function aimToHead(enemy, player) {
+  const head = enemy.headPosition;
+  const dist = distance(player.crosshair, head);
 
-  function aimToHead(player, enemy) {
-    if (!aimSettings.enabled || !enemy) return;
+  if (dist > ghostAI.stickyRadius) return;
 
-    const dx = enemy.position.x - player.crosshair.x + aimSettings.headOffset.x;
-    const dy = enemy.position.y - player.crosshair.y + aimSettings.headOffset.y;
+  let aimX = head.x - player.crosshair.x;
+  let aimY = head.y - player.crosshair.y;
 
-    player.crosshair.x += dx / aimSettings.aimStrength;
-    player.crosshair.y += dy / aimSettings.aimStrength;
-  }
+  // Tăng lực hút cực mạnh
+  player.crosshair.x += aimX * (ghostAI.lockPower / 10000);
+  player.crosshair.y += aimY * (ghostAI.lockPower / 10000);
+}
 
-  function onSwipe(player, enemies) {
-    const target = enemies.find(isEnemy);
-    aimToHead(player, target);
-  }
+function autoAdjustBullet(bullet, targetHead) {
+  // Gắn đạn lệch bay lại về đầu
+  bullet.trajectory.x += (targetHead.x - bullet.trajectory.x) * 0.9;
+  bullet.trajectory.y += (targetHead.y - bullet.trajectory.y) * 0.9;
+}
 
-  const gameLoop = setInterval(() => {
-    if (typeof game === 'undefined' || !game.player || !game.enemies) return;
+game.on('tick', () => {
+  const player = game.localPlayer;
+  const enemies = game.getEnemies();
 
-    if (game.player.input.isSwiping) {
-      onSwipe(game.player, game.enemies);
+  enemies.forEach(enemy => {
+    if (!enemy.visible || enemy.health <= 0) return;
+
+    // Ghim tâm cực mạnh khi vuốt
+    if (player.isSwiping) {
+      aimToHead(enemy, player);
     }
-  }, 10);
-})();
+
+    // Gắn từng viên bay lệch → về đầu
+    if (ghostAI.multiBulletCorrection) {
+      game.getBullets().forEach(b => {
+        if (b.ownerId === player.id) {
+          autoAdjustBullet(b, enemy.headPosition);
+        }
+      });
+    }
+  });
+});
