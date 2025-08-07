@@ -1,86 +1,58 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v13.0-GodBurstX1000
-// @version      13.0
-// @description  Ghim đầu max lực – Không trượt – Ưu tiên burst vào đầu – Anti lệch – Lock cực nhanh
+// @name         AutoHeadlockProMax v12.5-UltraSquadGod
+// @version      12.5
+// @description  Ghim đầu 1000% sức mạnh – Không dính thân/chân – Full tốc độ hút đầu mọi tình huống
 // ==/UserScript==
 
-const aimSystem = {
-  headRatio: 0.98, // Ưu tiên vùng đầu gần tuyệt đối
-  neckRedirect: true, // Nếu lệch cổ → auto đẩy lên đầu
-  burstControl: true,
-  burstRate: 6, // Bắn 3 viên → reset lock
-  aimSpeed: 9999, // Max tốc độ lock
-  stickyPower: 999, // Độ dính mục tiêu
-  predictionPower: 1.6, // Dự đoán vị trí di chuyển
-  recoilCompensation: true,
-  recoilFactor: 0, // Không lệch
-  humanSwipeDelay: 8, // Delay xử lý vuốt để hợp lý hơn
-  squadLock: true,
-  squadLockPriority: 'closest+danger', // Ưu tiên địch gần và nguy hiểm
-  maxDistance: 200,
-  aimUpdateRate: 1, // Mỗi tick
-  bulletSpeedBoost: true,
-  quantumFollow: true,
-  wallBypass: true,
+const config = {
+  aimPower: 999999,             // Siêu lực hút
+  lockSpeed: 9999,              // Siêu tốc độ
+  predictFactor: 1.75,          // Dự đoán di chuyển
+  headPriority: true,           // Ưu tiên đầu tuyệt đối
+  avoidBodyZone: true,          // Bỏ qua vùng thân
+  avoidLowerZone: true,         // Bỏ qua thân dưới
+  stickyLock: true,             // Ghim dính tuyệt đối
+  dynamicCorrection: true,      // Tự điều chỉnh khi vuốt lệch
+  maxRange: 180,                // Tăng khoảng cách khóa
+  reaimDelay: 0,                // Không delay khi khóa lại
+  burstControl: true,           // Giữ lock từng viên
+  overrideHumanSwipe: true,     // Vuốt lệch vẫn auto vào đầu
+  squadLockMode: true,          // Ưu tiên mục tiêu nguy hiểm
 };
 
-let fireBurstCount = 0;
+function onEnemyDetected(enemy) {
+  if (!enemy.visible || enemy.health <= 0) return;
+
+  let aimZone = enemy.head;
+
+  if (config.avoidBodyZone && aimZone === enemy.body) return;
+  if (config.avoidLowerZone && (aimZone === enemy.legs || aimZone === enemy.feet)) return;
+
+  if (config.headPriority) {
+    aimZone = enemy.head;
+  }
+
+  game.lockTarget({
+    target: enemy,
+    zone: aimZone,
+    speed: config.lockSpeed,
+    power: config.aimPower,
+    sticky: config.stickyLock,
+    predict: config.predictFactor,
+    dynamic: config.dynamicCorrection,
+  });
+}
 
 game.on('tick', () => {
-  const enemy = game.findTarget({
-    priority: aimSystem.squadLockPriority,
-    range: aimSystem.maxDistance,
-    visibility: !aimSystem.wallBypass ? 'visible' : 'any',
-  });
+  const enemies = game.getEnemiesInRange(config.maxRange);
+  const validEnemies = enemies.filter(e => e.visible && e.health > 0);
 
-  if (!enemy) return;
-
-  const targetPos = enemy.getPredictedHead(aimSystem.predictionPower);
-
-  // Neck redirect logic
-  if (aimSystem.neckRedirect) {
-    let offsetY = targetPos.y - game.player.aim.y;
-    if (offsetY > 0.2 && offsetY < 0.5) {
-      targetPos.y -= offsetY * 0.95; // Kéo gần lên đầu
-    }
+  if (config.squadLockMode) {
+    validEnemies.sort((a, b) => b.damageOutput - a.damageOutput); // Ưu tiên địch nguy hiểm
   }
 
-  // Apply no spread logic
-  if (aimSystem.recoilCompensation) {
-    game.player.spread = 0;
-  }
-
-  // Update aim
-  game.player.aim = game.player.aim.lerp(targetPos, aimSystem.aimSpeed);
-
-  // Sticky Lock
-  if (aimSystem.stickyPower > 0) {
-    game.lockOn(enemy, aimSystem.stickyPower);
-  }
-
-  // Burst Fire Logic
-  if (aimSystem.burstControl && game.player.isFiring) {
-    fireBurstCount++;
-    if (fireBurstCount >= aimSystem.burstRate) {
-      fireBurstCount = 0;
-      game.retarget(enemy); // Reset lock để lock lại mạnh hơn
-    }
-  }
-
-  // Human swipe delay
-  if (aimSystem.humanSwipeDelay > 0 && game.player.isSwiping) {
-    game.delayAimUpdate(aimSystem.humanSwipeDelay);
-  }
-
-  // Bullet Speed Hack (Fake logic)
-  if (aimSystem.bulletSpeedBoost) {
-    game.bulletSpeed = 999999;
-  }
-
-  // Head Lock Quantum Track
-  if (aimSystem.quantumFollow) {
-    let d = enemy.getHeadPosition();
-    game.player.aim.x += (d.x - game.player.aim.x) * 1.5;
-    game.player.aim.y += (d.y - game.player.aim.y) * 1.5;
+  const target = validEnemies[0];
+  if (target) {
+    onEnemyDetected(target);
   }
 });
