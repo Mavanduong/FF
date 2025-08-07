@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v11.0-DynamicScopeAI (Test + AntiBan)
-// @version      11.0.1
-// @description  Ghim đầu AI động theo scope – Test được trên Shadowrocket – Có AntiBan
+// @name         AutoHeadlockProMax v11.1-FullSmoothFollow
+// @version      11.1
+// @description  Ghim đầu AI siêu mượt theo từng loại tâm – Vuốt là lock – Có AntiBan và TestMode
 // ==/UserScript==
 
 const config = {
@@ -15,15 +15,16 @@ const config = {
   maxDistance: 180,
   overrideFire: true,
   antiBan: true,
-  testMode: true, // ✅ Mô phỏng nếu không có game
+  testMode: true,
 };
 
 let currentTarget = null;
 let isSwiping = false;
+let lastAimPos = null;
 
-// 🧱 Tạo mock game nếu chưa có
+// 🧪 Mock game nếu test
 if (typeof game === "undefined" && config.testMode) {
-  console.log("🧪 [TEST MODE] Tạo giả lập game...");
+  console.log("🧪 [TEST MODE] Đang tạo giả lập game...");
   game = {
     enemies: [{
       isDead: false,
@@ -46,27 +47,27 @@ if (typeof game === "undefined" && config.testMode) {
   };
 }
 
-// 🧿 ANTI BAN logic (Fake behavior delay)
+// 🧠 AntiBan Delay
 function antiBanSafeDelay() {
   if (config.antiBan) {
-    const rand = Math.random() * 200 + 100;
-    return new Promise(resolve => setTimeout(resolve, rand));
+    const delay = Math.random() * 200 + 100;
+    return new Promise(resolve => setTimeout(resolve, delay));
   }
   return Promise.resolve();
 }
 
-// 🎯 Enemy còn sống, thấy được, trong tầm
+// 🎯 Kiểm tra địch
 function isEnemyVisible(enemy) {
   return enemy && !enemy.isDead && enemy.isVisible && enemy.distance <= config.maxDistance;
 }
 
-// 🎯 Scope hiện tại
+// 🎯 Lấy loại scope hiện tại
 function getCurrentScopeType() {
   const scope = game.crosshair.scopeType;
   return config.scopes[scope] ? scope : "hipfire";
 }
 
-// 🎯 Dự đoán đầu
+// 🎯 Dự đoán vị trí đầu
 function predictHeadPosition(enemy, predictFactor) {
   return {
     x: enemy.head.x + enemy.velocity.x * predictFactor,
@@ -75,11 +76,22 @@ function predictHeadPosition(enemy, predictFactor) {
   };
 }
 
+// 🧲 Lerp = Mượt
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+function smoothMove(from, to, speed) {
+  return {
+    x: lerp(from.x, to.x, speed),
+    y: lerp(from.y, to.y, speed),
+    z: lerp(from.z, to.z, speed),
+  };
+}
+
 // 🎯 Tìm địch gần nhất
 function findClosestEnemy() {
   let closest = null;
   let minDist = Infinity;
-
   for (const enemy of game.enemies) {
     if (!isEnemyVisible(enemy)) continue;
     if (enemy.distance < minDist) {
@@ -87,35 +99,41 @@ function findClosestEnemy() {
       closest = enemy;
     }
   }
-
   return closest;
 }
 
-// 🎯 Ghim đầu
+// 🎯 Aim mượt vào đầu
 async function aimAtTarget(enemy) {
   const scope = getCurrentScopeType();
   const scopeConfig = config.scopes[scope];
   const predictedHead = predictHeadPosition(enemy, scopeConfig.predictFactor);
 
+  if (!lastAimPos) lastAimPos = predictedHead;
+  const smoothedPos = smoothMove(lastAimPos, predictedHead, 0.2); // 0.2 là độ mượt
+  lastAimPos = smoothedPos;
+
   await antiBanSafeDelay();
 
-  game.crosshair.aimAt(predictedHead, scopeConfig.aimSpeed);
+  game.crosshair.aimAt(smoothedPos, scopeConfig.aimSpeed);
+
   if (config.overrideFire) {
     game.fireWeapon();
   }
 }
 
-// 🧠 Vuốt = bắt đầu aim
+// 🎮 Vuốt = bắt đầu
 game.on("touchmove", () => {
   isSwiping = true;
 });
 
+// 🛑 Ngừng vuốt = reset
 game.on("touchend", () => {
   isSwiping = false;
   currentTarget = null;
+  lastAimPos = null;
 });
 
-// ⏱ Game loop
+// 🔁 Tick mỗi 100ms
 game.on("tick", async () => {
   if (!isSwiping) return;
 
