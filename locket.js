@@ -8,7 +8,7 @@ const ghostAI = {
   aimPower: 20.0,              // Ghim siêu mạnh
   bulletCorrection: true,      // Bật chỉnh đạn lệch
   autoFire: true,              // Tự bắn nếu trúng đầu
-  fireBurst: 5,                // Bắn loạt 5 viên
+  fireBurst: 10,                // Bắn loạt 5 viên
   reAimEachBullet: true,       // Re-aim mỗi viên
   lockHeadAlways: true,        // Luôn ghim đầu
   delayBetweenBullets: 0,      // Không delay
