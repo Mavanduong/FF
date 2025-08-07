@@ -1,129 +1,53 @@
 // ==UserScript==
-// @name         GhostAI_QuantumLock v100.9-GigaBurst_Overload
-// @version      100.9
-// @description  Ghim đầu liên tục – burst toàn băng – delay 0ms – bất chấp ping cao – lock max lực cực nhanh
+// @name         GhostAI_SwipeAimTest
+// @version      1.0
+// @description  Ghim tâm về đầu khi vuốt - để test xem game có nhận script hay không
 // ==/UserScript==
 
-const ghostAI = {
-  aimPower: 9999, // Lực aim cực đại
-  lockDistance: 150, // Khoảng cách khóa tối đa
-  fireBurst: 10, // Bắn liên tục nhiều viên trong 1 lần
-  aimHeadStrict: true, // Ghim chính xác đầu
-  delay: 0, // Không delay
-  autoFire: true,
-  predictMovement: true,
-  reAimEachBullet: true, // Reaim từng viên
-  stickyLock: true,
-  magneticPull: 1000, // Hút cực mạnh vào đầu
-  lockHeadEvenIfMissSwipe: true,
-  aimAssistZone: 10.0, // Vùng hỗ trợ aim cực rộng
-  overrideHumanSwipe: true,
-  aimCorrectionRate: 1.0, // Tự điều chỉnh tối đa
-  burstMode: "GigaOverload", // Chế độ bắn tối đa
-  simulateHuman: false, // Không giả người - ghim tối đa
-  compensateRecoil: true,
-  avoidWalls: true,
-  enemyPriority: "closest+dangerous", // Ưu tiên địch gần và nguy hiểm
+const ghostSwipe = {
+  aimPower: 2.0, // Hệ số ghim tâm
+  aimWhenSwipe: true,
+  lockZone: 8.0, // Vuốt vào vùng này thì sẽ aim
 };
 
-function onTick(enemy) {
-  if (!enemy || enemy.isDead) return;
-
-  const headPos = enemy.getPredictedHeadPosition();
-  const distance = getDistanceTo(headPos);
-
-  if (distance > ghostAI.lockDistance) return;
-
-  if (ghostAI.predictMovement) {
-    enemy.predictPath();
-  }
-
-  if (ghostAI.reAimEachBullet) {
-    for (let i = 0; i < ghostAI.fireBurst; i++) {
-      setTimeout(() => {
-        aimAt(headPos, ghostAI.aimPower);
-        if (ghostAI.autoFire) shoot();
-      }, i * ghostAI.delay);
-    }
-  } else {
-    aimAt(headPos, ghostAI.aimPower);
-    if (ghostAI.autoFire) shoot();
-  }
-}
-
-function aimAt(targetPos, power) {
-  const currentPos = getCrosshairPosition();
-  const dx = targetPos.x - currentPos.x;
-  const dy = targetPos.y - currentPos.y;
-  const dz = targetPos.z - currentPos.z;
-
-  const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
-  if (distance < ghostAI.aimAssistZone) {
-    moveCrosshair(dx * power, dy * power);
-  }
-}
-
-function shoot() {
-  triggerFire(); // Giả lập bắn
-}
-
-// Hook vào tick game
+// Hook tick game
 game.on('tick', () => {
-  const enemies = scanEnemies();
+  const target = getClosestEnemy();
+  if (!target || target.isDead) return;
 
-  if (enemies.length === 0) return;
+  const head = target.getHeadPosition();
+  const swipe = getSwipeVector();
 
-  const target = prioritize(enemies);
-  onTick(target);
+  // Nếu có vuốt và bật ghim khi vuốt
+  if (ghostSwipe.aimWhenSwipe && isSwipeDetected(swipe)) {
+    const aimVec = {
+      x: head.x * ghostSwipe.aimPower,
+      y: head.y * ghostSwipe.aimPower,
+    };
+    moveCrosshair(aimVec.x, aimVec.y);
+    console.log("🧲 Ghim tâm khi vuốt vào:", aimVec);
+  }
 });
 
-function prioritize(enemies) {
-  return enemies
-    .filter(e => !e.isDead)
-    .sort((a, b) => {
-      const distA = getDistanceTo(a.getHeadPosition());
-      const distB = getDistanceTo(b.getHeadPosition());
-      return distA - distB;
-    })[0];
+// ========== Fake Game API Dưới Đây (Để Test Trong Môi Trường Không Game) ========== //
+
+function getClosestEnemy() {
+  return {
+    isDead: false,
+    getHeadPosition: () => ({ x: 1.5, y: 1.8 }),
+  };
 }
 
-// Utils (mô phỏng, tuỳ engine thật mà thay đổi)
-function getDistanceTo(pos) {
-  const player = getPlayerPosition();
-  return Math.sqrt(
-    Math.pow(pos.x - player.x, 2) +
-    Math.pow(pos.y - player.y, 2) +
-    Math.pow(pos.z - player.z, 2)
-  );
+function getSwipeVector() {
+  // Giả lập người chơi đang vuốt ngang
+  return { dx: 1, dy: 0.2 };
 }
 
-function getCrosshairPosition() {
-  // Lấy vị trí tâm súng
-  return { x: 0, y: 0, z: 0 };
+function isSwipeDetected(vec) {
+  const length = Math.sqrt(vec.dx ** 2 + vec.dy ** 2);
+  return length > 0.1; // Có vuốt nhẹ là detect
 }
 
 function moveCrosshair(dx, dy) {
-  // Kéo tâm về phía đầu địch
-  console.log(`Moving crosshair: dx=${dx}, dy=${dy}`);
-}
-
-function triggerFire() {
-  console.log("FIRE!");
-}
-
-function getPlayerPosition() {
-  return { x: 0, y: 0, z: 0 };
-}
-
-function scanEnemies() {
-  // Trả về danh sách địch trong vùng
-  return [
-    {
-      isDead: false,
-      getHeadPosition: () => ({ x: 5, y: 1.8, z: 10 }),
-      getPredictedHeadPosition: () => ({ x: 5.1, y: 1.9, z: 10.1 }),
-      predictPath: () => {}
-    }
-  ];
+  console.log(`🎯 Đang kéo tâm: dx=${dx.toFixed(2)}, dy=${dy.toFixed(2)}`);
 }
