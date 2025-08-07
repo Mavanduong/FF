@@ -5,8 +5,8 @@
 // ==/UserScript==
 
 const config = {
-  aimSpeed: 6000, // Siêu nhanh, di theo đầu ngay lập tức
-  predictionFactor: 1.35, // Dự đoán đường chạy của đầu
+  aimSpeed: 60000000000000000, // Siêu nhanh, di theo đầu ngay lập tức
+  predictionFactor: 999999999, // Dự đoán đường chạy của đầu
   stickyLock: true,
   maxDistance: 9999, // Phạm vi auto-lock
   headCorrection: true,
