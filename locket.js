@@ -1,67 +1,42 @@
 // ==UserScript==
-// @name         GhostAI_AutoCorrectHeadshot v3.0
-// @version      3.0
-// @description  Tự điều chỉnh mọi viên đạn lệch bay thẳng vào đầu địch – siêu ghim không cần vuốt
+// @name         FF_AutoAim_NoConsole_v1.0
+// @version      1.0
+// @description  Ghim đầu khi vuốt – Không console – Max lực hút
 // ==/UserScript==
 
-const ghostAI = {
-  aimPower: 20.0,              // Ghim siêu mạnh
-  bulletCorrection: true,      // Bật chỉnh đạn lệch
-  autoFire: true,              // Tự bắn nếu trúng đầu
-  fireBurst: 10,                // Bắn loạt 5 viên
-  reAimEachBullet: true,       // Re-aim mỗi viên
-  lockHeadAlways: true,        // Luôn ghim đầu
-  delayBetweenBullets: 0,      // Không delay
-  correctEveryTick: true,      // Tự sửa đạn từng tick
-};
-
-// Tick mỗi frame
-game.on('tick', () => {
-  const target = getLockedEnemy();
-  if (!target || target.isDead) return;
-
-  const head = target.getPredictedHeadPosition();
-
-  if (ghostAI.correctEveryTick) {
-    for (let i = 0; i < ghostAI.fireBurst; i++) {
-      setTimeout(() => {
-        correctBulletAim(head);
-        if (ghostAI.autoFire) shoot();
-      }, i * ghostAI.delayBetweenBullets);
-    }
-  }
-});
-
-// ======= Core Auto-Correction Logic =======
-function correctBulletAim(headPos) {
-  const bullet = getNextBulletTrajectory(); // Vị trí viên đạn sắp bắn
-  const dx = headPos.x - bullet.x;
-  const dy = headPos.y - bullet.y;
-
-  const moveX = dx * ghostAI.aimPower;
-  const moveY = dy * ghostAI.aimPower;
-
-  moveCrosshair(moveX, moveY);
-}
-
-// ======= Fake API Stub – cần thay bằng API thật nếu có =======
-
-function getLockedEnemy() {
-  return {
-    isDead: false,
-    getPredictedHeadPosition: () => ({ x: 3.3, y: 1.75 }),
+(() => {
+  const aimSettings = {
+    enabled: true,
+    aimStrength: 9999,
+    headOffset: { x: 0, y: -0.35 }, // Gần như ghim thẳng đầu
+    prediction: true,
+    autoCorrect: true,
   };
-}
 
-function getNextBulletTrajectory() {
-  // Giả lập viên đạn lệch
-  return { x: 1.2, y: 1.2 };
-}
+  function isEnemy(target) {
+    return target && target.isVisible && target.type === 'enemy';
+  }
 
-function moveCrosshair(dx, dy) {
-  // Không log – hoạt động im lặng
-}
+  function aimToHead(player, enemy) {
+    if (!aimSettings.enabled || !enemy) return;
 
-function shoot() {
-  // Giả lập hành động bắn – không cần log
-}
+    const dx = enemy.position.x - player.crosshair.x + aimSettings.headOffset.x;
+    const dy = enemy.position.y - player.crosshair.y + aimSettings.headOffset.y;
+
+    player.crosshair.x += dx / aimSettings.aimStrength;
+    player.crosshair.y += dy / aimSettings.aimStrength;
+  }
+
+  function onSwipe(player, enemies) {
+    const target = enemies.find(isEnemy);
+    aimToHead(player, target);
+  }
+
+  const gameLoop = setInterval(() => {
+    if (typeof game === 'undefined' || !game.player || !game.enemies) return;
+
+    if (game.player.input.isSwiping) {
+      onSwipe(game.player, game.enemies);
+    }
+  }, 10);
+})();
