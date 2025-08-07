@@ -1,35 +1,38 @@
 // ==UserScript==
-// @name         GhostSwipeLock iOS v1.0
-// @version      1.0
-// @description  Ghim đầu mọi viên khi vuốt, tự lock nếu kéo gần đầu – không log – không e-aim từng viên
+// @name         GhostSwipeLock iOS v2.1 – Simulated Ping 200ms
+// @version      2.1
+// @description  Giả lập ping 200ms: delay xử lý ghim đầu – không thay đổi ping thật – ổn định cho test hành vi người
 // ==/UserScript==
 
 const config = {
-  lockDistance: 120, // phạm vi phát hiện
+  lockDistance: 130,
   swipeAssist: true,
   autoHeadSnap: true,
-  headRadius: 0.28,
-  assistForce: 0.9999,
-  dragThreshold: 0.15, // độ lệch tối đa khi người chơi kéo
-  fakeNaturalDelay: 6, // ms delay phản ứng như người
+  headRadius: 0.3,
+  assistForce: 0.99995,
+  dragThreshold: 0.18,
+  simulatedPingMs: 200, // ✅ delay xử lý như ping thật
+  aiPredictionMs: 80,
+  priorityMovingEnemy: true,
 };
 
-function getEnemyHeadFromAPI(apiData) {
+function getEnemyHeads(apiData) {
   if (!apiData || !apiData.enemies) return [];
   return apiData.enemies.map(e => ({
     id: e.id,
-    x: e.head.x,
-    y: e.head.y,
-    z: e.head.z,
-    moving: e.velocity > 0.5
-  }));
+    x: e.head.x + (e.velocityX || 0) * config.aiPredictionMs / 1000,
+    y: e.head.y + (e.velocityY || 0) * config.aiPredictionMs / 1000,
+    z: e.head.z + (e.velocityZ || 0) * config.aiPredictionMs / 1000,
+    speed: e.velocity || 0,
+    visible: e.visible !== false
+  })).filter(e => e.visible);
 }
 
-function isUserDragging(inputState) {
-  return inputState.swipe.length > 0;
+function isUserDragging(input) {
+  return input && input.swipe && input.swipe.length > 0;
 }
 
-function applyAutoSwipeLock(cursor, head, config) {
+function lockToHead(cursor, head) {
   const dx = head.x - cursor.x;
   const dy = head.y - cursor.y;
   const dz = head.z - cursor.z;
@@ -42,30 +45,35 @@ function applyAutoSwipeLock(cursor, head, config) {
   return cursor;
 }
 
-function onGameTick(apiData, inputState, currentCursor) {
-  const heads = getEnemyHeadFromAPI(apiData);
-  if (!isUserDragging(inputState)) return currentCursor;
+function onGameTick(apiData, inputState, cursor) {
+  if (!isUserDragging(inputState)) return cursor;
 
-  for (const head of heads) {
-    const dx = Math.abs(head.x - currentCursor.x);
-    const dy = Math.abs(head.y - currentCursor.y);
-    const dz = Math.abs(head.z - currentCursor.z);
+  const heads = getEnemyHeads(apiData);
+  const prioritized = config.priorityMovingEnemy
+    ? heads.sort((a, b) => b.speed - a.speed)
+    : heads;
+
+  for (const head of prioritized) {
+    const dx = head.x - cursor.x;
+    const dy = head.y - cursor.y;
+    const dz = head.z - cursor.z;
     const error = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (error <= config.dragThreshold) {
-      // Giả lập vuốt nhẹ hỗ trợ
+    if (error < config.dragThreshold) {
       setTimeout(() => {
-        currentCursor = applyAutoSwipeLock(currentCursor, head, config);
-      }, config.fakeNaturalDelay);
+        const locked = lockToHead(cursor, head);
+        updateCursor(locked);
+      }, config.simulatedPingMs); // ⏱️ delay đúng 200ms như ping cao
+      break;
     }
   }
-  return currentCursor;
+
+  return cursor;
 }
 
-// Tick loop cho Shadowrocket / Scriptable
 setInterval(() => {
-  const apiData = getLatestGameAPI();  // giả lập hàm hook API
-  const input = getTouchOrSwipe();     // giả lập input
-  const currentCursor = getCursor();   // tọa độ tâm hiện tại
-  const updatedCursor = onGameTick(apiData, input, currentCursor);
-  updateCursor(updatedCursor);         // cập nhật lại tâm
+  const api = getLatestGameAPI();
+  const input = getTouchOrSwipe();
+  const cursor = getCursor();
+  const updated = onGameTick(api, input, cursor);
+  updateCursor(updated);
 }, 10);
