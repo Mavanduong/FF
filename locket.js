@@ -1,105 +1,166 @@
 // ==UserScript==
-// @name         GhostAI_Tactical_v17.9_SwipeMagnet_HybridLock
-// @version      17.9
-// @description  Vuốt nhẹ là ghim, đạn & tâm hút đầu cực mạnh, không trượt dù vuốt lệch – Auto Re-aim từng viên
+// @name         GhostAI Tactical v16.0 – NeuralLock AI
+// @version      16.0
+// @description  Ghim đầu thông minh – Tự học cách địch di chuyển – Không lệch – Không sống
 // ==/UserScript==
 
-(function () {
-  const ghostAIConfig = {
-    swipeMagnetForce: 0.999,       // Độ hút khi vuốt
-    aimStickyLevel: 0.997,         // Tâm dính đầu
-    bulletMagnetCurve: 0.992,      // Quỹ đạo đạn hút về đầu
-    snapCorrectionSpeed: 0.985,    // Tốc độ kéo snap về đầu nếu lệch
-    flickSensitivity: 0.970,       // Nhạy để sửa khi vuốt lệch
-    deadzoneTolerance: 0.02,       // Vùng lệch nhỏ vẫn auto ghim
-    delayAfterEachShot: 12,        // Re-aim từng viên
-    dualLockEnabled: true          // Hút cả đạn + tâm
+const ghostAI = {
+  aimLock: true,
+  stickyLock: true,
+  reAimEveryFrame: true,
+  viscosity: 99999,
+  headBias: 99999,
+  bulletMagnet: true,
+  bulletCorrection: {
+    enable: true,
+    predictMove: true,
+    gravityAdjust: true,
+    wallBypass: true,
+    offsetTolerance: 0.00000001,
+    smoothCurve: true,
+    recoilCompensate: true,
+  },
+  fireControl: {
+    autoFire: true,
+    burstMode: true,
+    burstSettings: {
+      rifle: { bullets: 14, interval: 8 },
+      smg:   { bullets: 18, interval: 6 },
+      other: { bullets: 10, interval: 10 }
+    },
+  },
+  antiSlip: true,
+  humanSwipeTrigger: true,
+  autoHeadlockOnSwipe: true,
+  reLockMissedShot: true,
+  legitSwipeSim: true,
+  evadeTrackingAI: true,
+  simulateHumanAimPath: true,
+  neckFallback: true,
+  multiTargetSmartLock: true,
+  dynamicMovementSupport: true,
+  aimPreLockVectorAI: true,
+  noMissAimCore: true,
+  learnEnemyPattern: true,              // ✅ MỚI: học cách địch di chuyển
+  autoAdjustToEnemyType: true,          // ✅ MỚI: phân biệt người / bot
+};
+
+// 📚 Học hành vi địch
+let enemyMemory = new Map();
+
+function learnEnemyBehavior(enemy) {
+  if (!enemy) return;
+  const id = enemy.id;
+  if (!enemyMemory.has(id)) {
+    enemyMemory.set(id, []);
+  }
+
+  const history = enemyMemory.get(id);
+  history.push({
+    pos: enemy.headPos,
+    time: Date.now(),
+    velocity: enemy.velocity,
+  });
+
+  if (history.length > 20) history.shift(); // chỉ giữ 20 lần gần nhất
+}
+
+// 🧠 Dự đoán từ hành vi cũ
+function predictSmart(enemy) {
+  const history = enemyMemory.get(enemy.id);
+  if (!history || history.length < 5) return enemy.headPos;
+
+  const last = history[history.length - 1];
+  const before = history[history.length - 5];
+  const dt = (last.time - before.time) / 1000;
+  if (dt <= 0) return enemy.headPos;
+
+  const dx = last.pos.x - before.pos.x;
+  const dy = last.pos.y - before.pos.y;
+  const dz = last.pos.z - before.pos.z;
+
+  return {
+    x: enemy.headPos.x + dx / dt * 0.15,
+    y: enemy.headPos.y + dy / dt * 0.15,
+    z: enemy.headPos.z + dz / dt * 0.15,
   };
+}
 
-  function isEnemy(target) {
-    return target && target.type === 'enemy' && target.isVisible;
+// 🔁 Tick chính
+game.on('tick', () => {
+  const enemy = detectClosestEnemy();
+  if (!enemy) return;
+
+  // Học chuyển động
+  if (ghostAI.learnEnemyPattern) learnEnemyBehavior(enemy);
+
+  let targetPos = ghostAI.aimPreLockVectorAI
+    ? predictSmart(enemy)
+    : enemy.headPos;
+
+  if (!targetPos) return;
+
+  // Nếu bot → chuyển sang Lock cực mạnh
+  if (ghostAI.autoAdjustToEnemyType && enemy.isBotLike) {
+    ghostAI.viscosity = 999999;
+    ghostAI.headBias = 999999;
   }
 
-  function getHeadPosition(enemy) {
-    return {
-      x: enemy.position.x,
-      y: enemy.position.y - enemy.height * 0.85,
-      z: enemy.position.z
-    };
+  // Snap + Sticky + Magnet
+  if (ghostAI.aimLock && ghostAI.reAimEveryFrame) {
+    aim.snapTo(targetPos, {
+      strength: ghostAI.viscosity,
+      bias: ghostAI.headBias,
+    });
   }
 
-  function adjustAim(currentAim, targetHead) {
-    const dx = targetHead.x - currentAim.x;
-    const dy = targetHead.y - currentAim.y;
-    const dz = targetHead.z - currentAim.z;
-
-    return {
-      x: currentAim.x + dx * ghostAIConfig.snapCorrectionSpeed,
-      y: currentAim.y + dy * ghostAIConfig.snapCorrectionSpeed,
-      z: currentAim.z + dz * ghostAIConfig.snapCorrectionSpeed
-    };
+  if (ghostAI.stickyLock) {
+    aim.stickyTo(targetPos, ghostAI.viscosity);
   }
 
-  function magnetizeBullet(bullet, headPos) {
-    const bx = headPos.x - bullet.position.x;
-    const by = headPos.y - bullet.position.y;
-    const bz = headPos.z - bullet.position.z;
-
-    bullet.velocity.x += bx * ghostAIConfig.bulletMagnetCurve;
-    bullet.velocity.y += by * ghostAIConfig.bulletMagnetCurve;
-    bullet.velocity.z += bz * ghostAIConfig.bulletMagnetCurve;
+  if (ghostAI.bulletMagnet && ghostAI.bulletCorrection.enable) {
+    aim.adjustBulletPath(targetPos, {
+      predict: true,
+      gravity: true,
+      wallBypass: true,
+      tolerance: ghostAI.bulletCorrection.offsetTolerance,
+      smoothCurve: true,
+      recoilCompensate: true,
+    });
   }
 
-  game.on('tick', () => {
-    const target = game.getClosestEnemy();
-    if (!isEnemy(target)) return;
+  if (ghostAI.humanSwipeTrigger && player.isSwiping) {
+    aim.lockOn(targetPos, 1.0);
+    fire.trigger();
+  }
 
-    const headPos = getHeadPosition(target);
+  if (ghostAI.fireControl.autoFire && ghostAI.fireControl.burstMode) {
+    const weapon = getEquippedWeapon();
+    const config = ghostAI.fireControl.burstSettings[weapon.type] || ghostAI.fireControl.burstSettings.other;
+    fire.burst(config.bullets, config.interval, targetPos);
+  }
 
-    if (ghostAIConfig.dualLockEnabled) {
-      // Lock tâm
-      const currentAim = game.getCrosshair();
-      const newAim = adjustAim(currentAim, headPos);
-      game.setCrosshair(newAim);
+  if (ghostAI.reLockMissedShot && aim.isOffTarget(targetPos)) {
+    aim.snapTo(targetPos, { strength: 99999 });
+  }
 
-      // Hút đạn đang bay
-      const bullets = game.getActiveBullets();
-      bullets.forEach(b => {
-        if (!b || !b.velocity) return;
-        magnetizeBullet(b, headPos);
-      });
-    }
-  });
+  if (ghostAI.multiTargetSmartLock) {
+    const targets = detectMultipleEnemies();
+    targets.forEach(t => {
+      if (t.headPos && isThreat(t)) {
+        aim.prioritize(t.headPos, 1.0);
+      }
+    });
+  }
+});
 
-  game.on('swipe', (angle, strength) => {
-    if (strength < ghostAIConfig.flickSensitivity) return;
-    const enemy = game.getClosestEnemy();
-    if (!isEnemy(enemy)) return;
+// 🛡 Bảo vệ toàn diện
+ghostAI.setProtection = () => {
+  enableAntiBan();
+  simulateSwipePath();
+  evadeAITracking();
+  humanizeAimPath();
+};
+ghostAI.setProtection();
 
-    const head = getHeadPosition(enemy);
-    const crosshair = game.getCrosshair();
-    const dx = head.x - crosshair.x;
-    const dy = head.y - crosshair.y;
-    const dz = head.z - crosshair.z;
 
-    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    if (distance < ghostAIConfig.deadzoneTolerance) return;
-
-    // Vuốt lệch → ghim lại
-    const fixedAim = adjustAim(crosshair, head);
-    game.setCrosshair(fixedAim);
-  });
-
-  game.on('shotFired', () => {
-    setTimeout(() => {
-      const target = game.getClosestEnemy();
-      if (!isEnemy(target)) return;
-      const head = getHeadPosition(target);
-      const current = game.getCrosshair();
-      const corrected = adjustAim(current, head);
-      game.setCrosshair(corrected);
-    }, ghostAIConfig.delayAfterEachShot);
-  });
-
-  console.log("🎯 GhostAI Tactical v17.9 Loaded – Vuốt Là Ghim, Hút Cả Đạn Lẫn Tâm 🔥");
-})();
