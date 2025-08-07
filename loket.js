@@ -1,90 +1,74 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v12.0-FullLock_AIOverheatFix
-// @version      12.0
-// @description  Ghim đầu cực mạnh – Vuốt sai lệch vẫn tự sửa – Tâm kéo nhanh – Giảm lệch do nóng nòng – Không lệch cổ – FullSafe
+// @name         AutoHeadlockProMax v12.1-ProLockSquad
+// @version      12.1
+// @description  Ghim đầu 100% – Bỏ qua thân – Ưu tiên squad nguy hiểm – Giảm lệch nòng – Siêu tốc vuốt
 // ==/UserScript==
 
 const config = {
-  aimSpeed: 60000000000000000, // Siêu nhanh, di theo đầu ngay lập tức
-  predictionFactor: 999999999, // Dự đoán đường chạy của đầu
-  stickyLock: true,
-  maxDistance: 9999, // Phạm vi auto-lock
-  headCorrection: true,
-  recoilDecay: 0, // Giảm độ lệch xuống 50%
-  overheatFix: true,
-  lockPriority: ['head', 'upperChest'],
-  smartCorrectionThreshold: 9999, // Nếu lệch < 15%, tự sửa tâm vào đầu
-  enableSwipeAssist: true,
-  antiBan: true
+  headLockRatio: 1.0, // Ghim đầu tuyệt đối
+  ignoreBodyBelowNeck: true, // Bỏ qua thân dưới
+  squadThreatLock: true, // Ưu tiên thằng nguy hiểm nhất team địch
+  aimPullSpeed: 9000, // Tăng tốc độ kéo tâm theo đầu
+  correctionAfterHeat: true, // Giảm lệch do nòng nóng
+  bulletDeviationCompensation: 0.5, // Giảm 50% lệch đạn
 };
 
-// 🔁 Overheat logic – giảm độ lệch theo số viên bắn ra
-let heatLevel = 0;
-
-function onBulletFired() {
-  heatLevel += 1;
-  if (heatLevel > 10) heatLevel = 10;
-  config.recoilDecay = 1 - (heatLevel / 20); // Giảm độ lệch dần
+function isValidTarget(enemy) {
+  if (!enemy.isVisible || !enemy.isAlive) return false;
+  if (config.ignoreBodyBelowNeck && enemy.targetZone === 'chest' || enemy.targetZone === 'stomach' || enemy.targetZone === 'legs') {
+    return false;
+  }
+  return true;
 }
 
-function onGameTick(player, enemies) {
-  if (!player || enemies.length === 0) return;
+function getPriorityTarget(enemies) {
+  let filtered = enemies.filter(e => isValidTarget(e));
+  if (config.squadThreatLock) {
+    filtered.sort((a, b) => b.dangerLevel - a.dangerLevel); // Lock thằng nguy hiểm nhất
+  }
+  return filtered[0] || null;
+}
 
-  const targets = enemies
-    .filter(e => e.isVisible && e.distance <= config.maxDistance)
-    .map(e => {
-      const headPos = predictHead(e);
-      const dist = distance(player.crosshair, headPos);
-      return { enemy: e, headPos, dist };
-    })
-    .sort((a, b) => a.dist - b.dist);
+function autoAim(game) {
+  const target = getPriorityTarget(game.enemies);
+  if (!target) return;
 
-  if (targets.length === 0) return;
+  const headPosition = target.headPosition;
+  const distance = game.getDistanceTo(headPosition);
 
-  const target = targets[0];
-  const angleOffset = calculateOffset(player.crosshair, target.headPos);
+  let aimVector = game.getVectorTo(headPosition);
+  aimVector = applyStickyLock(aimVector);
+  aimVector = applyPrediction(aimVector, target.velocity, distance);
 
-  // Nếu lệch nhỏ, tự sửa vào đầu
-  if (Math.abs(angleOffset.x) < config.smartCorrectionThreshold &&
-      Math.abs(angleOffset.y) < config.smartCorrectionThreshold) {
-    moveCrosshair(player, target.headPos, config.aimSpeed);
-  } else if (config.enableSwipeAssist && isSwiping(player)) {
-    // Vuốt sai lệch? Tự điều chỉnh lại
-    moveCrosshair(player, target.headPos, config.aimSpeed * 0.8);
+  // Giảm lệch do nòng nóng
+  if (config.correctionAfterHeat && game.bulletsFired > 10) {
+    aimVector = adjustForHeat(aimVector, game.bulletsFired);
   }
 
-  if (isFiring(player)) {
-    onBulletFired();
-  }
+  game.moveCrosshairTo(aimVector, config.aimPullSpeed);
 }
 
-function predictHead(enemy) {
-  const predictX = enemy.head.x + enemy.velocity.x * config.predictionFactor;
-  const predictY = enemy.head.y + enemy.velocity.y * config.predictionFactor;
-  return { x: predictX, y: predictY };
+function applyStickyLock(vector) {
+  vector.x *= config.headLockRatio;
+  vector.y *= config.headLockRatio;
+  return vector;
 }
 
-function distance(a, b) {
-  return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+function applyPrediction(vector, velocity, distance) {
+  const predictFactor = distance / 10;
+  vector.x += velocity.x * predictFactor;
+  vector.y += velocity.y * predictFactor;
+  return vector;
 }
 
-function calculateOffset(from, to) {
-  return { x: to.x - from.x, y: to.y - from.y };
+function adjustForHeat(vector, fired) {
+  const heatFactor = Math.min(1, fired / 30); // max 30 viên
+  vector.x *= (1 - config.bulletDeviationCompensation * heatFactor);
+  vector.y *= (1 - config.bulletDeviationCompensation * heatFactor);
+  return vector;
 }
 
-function moveCrosshair(player, target, speed) {
-  player.crosshair.x += (target.x - player.crosshair.x) * speed / 10000;
-  player.crosshair.y += (target.y - player.crosshair.y) * speed / 10000;
-}
-
-function isSwiping(player) {
-  return Math.abs(player.swipe.x) > 0.1 || Math.abs(player.swipe.y) > 0.1;
-}
-
-function isFiring(player) {
-  return player.isShooting || player.autoFire;
-}
-
+// Tick loop
 game.on('tick', () => {
-  onGameTick(game.player, game.enemies);
+  autoAim(game);
 });
