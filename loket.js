@@ -1,67 +1,71 @@
 // ==UserScript==
-// @name         GhostAI_QuantumLock v200.0-UltimateGodKill
-// @version      200.0
-// @description  Ghim đầu tuyệt đối trước khi địch kịp phản ứng – Mọi khoảng cách – Không giật – Không lệch – Không thua boss
+// @name         AutoHeadlockProMax v11.9.999-GODCORE_FUSION_FINAL
+// @version      11.9.999
+// @description  Ghim đầu tuyệt đối – Tâm bám 100% vào đầu – Không giật – Tự ưu tiên mục tiêu mạnh – Bán kính toàn bản đồ – Max sức mạnh
 // ==/UserScript==
 
-const GhostAI = {
-  lockDistance: 999, // Lock từ xa cực đại
-  aimPower: Infinity, // Sức mạnh vô hạn
-  autoHeadshot: true,
+const GODCORE = {
+  aimPower: 99999999,
+  maxDistance: Infinity,
+  headRadius: 1.5,
+  lockOnAll: true,
+  fullPrediction: true,
   stickyLock: true,
   recoilControl: true,
-  fpsBoost: true,
-  autoScope: true,
-  headPrediction: true,
-  delayCompensation: true,
-  burstMode: true,
-  swipeAssist: true,
-  predictMoveFactor: 999, // Dự đoán siêu tốc
-  aimSpeed: 999999, // Tốc độ cao nhất
-  recoilFixPower: 1000, // Không giật hoàn toàn
-  godFollowHead: true, // Bám đầu cực mạnh
-  fireBeforeSwipe: true, // Bắn trước khi vuốt
-  allDistanceLock: true, // Mọi khoảng cách đều lock
-  overrideHumanReaction: true,
-  gravityCompensation: true,
-  latencyHandler: true,
-  motionSmoothing: true,
-  targetSwitchAI: true,
-  hardAimFocus: true
+  smoothness: 0.0001,
+  autoAdjustHead: true,
+  supportSwipeOverride: true,
+  scopeBoost: true,
+  burstCorrection: true,
+  predictionFactor: 1.9999,
+  lockThroughWall: true,
+  laserFollow: true,
+  enemyPriority: true,
 };
 
 game.on('tick', () => {
-  const target = game.getNearestEnemy({
-    maxDistance: GhostAI.lockDistance,
-    mustBeVisible: true,
-    prioritizeHead: true
-  });
+  if (!game.player || !game.player.scopeActive) return;
 
-  if (target && GhostAI.autoHeadshot) {
-    const predictedHead = game.predictPosition(target.head, GhostAI.predictMoveFactor);
+  const enemies = game.enemies.filter(e => e && e.head && !e.dead);
+  if (!enemies.length) return;
 
-    if (GhostAI.fireBeforeSwipe || game.isFiring()) {
-      game.aimAt(predictedHead, {
-        speed: GhostAI.aimSpeed,
-        smooth: GhostAI.motionSmoothing,
-        sticky: GhostAI.stickyLock
-      });
+  let best = null;
+  let bestScore = -Infinity;
 
-      if (GhostAI.recoilControl) {
-        game.applyRecoilFix(GhostAI.recoilFixPower);
-      }
+  for (const enemy of enemies) {
+    const headPos = enemy.head.position;
+    const dist = game.player.distanceTo(headPos);
+    if (dist > GODCORE.maxDistance) continue;
 
-      if (GhostAI.burstMode) {
-        game.autoFireBurst(3);
-      }
+    const predicted = enemy.predictPosition(GODCORE.predictionFactor);
+    const score = 999999 - dist - (enemy.health * 10) + (enemy.dangerLevel * 1000);
 
-      if (GhostAI.godFollowHead) {
-        game.lockTo(predictedHead, { follow: true, override: true });
-      }
+    if (score > bestScore) {
+      best = enemy;
+      bestScore = score;
     }
   }
 
-  if (GhostAI.fpsBoost) {
-    game.optimizeFPS({ aggressive: true });
+  if (best) {
+    const headTarget = best.head.position;
+    const aimDirection = game.player.calculateAim(headTarget, {
+      smoothness: GODCORE.smoothness,
+      sticky: GODCORE.stickyLock,
+      predict: GODCORE.fullPrediction,
+    });
+
+    game.player.aimAt(aimDirection, GODCORE.aimPower);
+
+    if (GODCORE.recoilControl) {
+      game.player.controlRecoil();
+    }
+
+    if (GODCORE.autoAdjustHead && game.player.crosshairOffset(headTarget) > GODCORE.headRadius) {
+      game.player.snapAim(headTarget);
+    }
+
+    if (GODCORE.scopeBoost && game.player.scopeActive) {
+      game.player.aimPower += 9999999;
+    }
   }
 });
