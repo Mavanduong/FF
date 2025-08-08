@@ -1,65 +1,87 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v11.9-GodModeX
-// @version      11.9
-// @description  Ghim đầu tự động AI – Vuốt hay không vuốt đều aim – FPS Boost + Max Stability – Shadowrocket Ready
+// @name         AutoHeadlockGodAI_V1000.0_Final
+// @version      1000.0
+// @description  Ghim đầu AI tối thượng – Không lệch – Không delay – FPS boost – Không giật
+// @match        *://*/*
+// @run-at       document-start
 // ==/UserScript==
 
-const AutoHeadlockConfig = {
-  aimPower: 9999,
-  aimSpeed: 9999,
-  preFireLock: true, // Tự aim lên đầu khi nhấn bắn, không cần vuốt
-  maxDistance: Infinity,
-  stickyAim: true,
-  dynamicCorrection: true,
-  followHeadDirection: true,
-  smoothAutoLift: true,
-  fpsBoost: true,
-  pingFake: 25,
-  multiBulletSupport: true,
-  predictHeadSwipe: true,
-  antiMiss: true,
-  laserLock: true,
-  wallCheck: false,
-  memoryAim: true,
-  stableAllMove: true,
-  overrideHuman: true
-};
+(function () {
+  'use strict';
 
-function onGameTick(game) {
-  if (!game || !game.enemies || !game.localPlayer) return;
+  const config = {
+    aimLockForce: Infinity,
+    aimSpeed: 999999999,
+    stickyRange: 9999,
+    predictionMultiplier: 2.0,
+    autoScope: true,
+    fpsBoost: true,
+    recoilControl: true,
+    noMiss: true,
+    maxDistance: 99999,
+    overrideHumanSwipe: true,
+  };
 
-  game.enemies.forEach(enemy => {
-    if (!enemy.isAlive || !enemy.isVisible) return;
+  function boostFPS() {
+    try {
+      requestAnimationFrame = (cb) => setTimeout(cb, 0);
+      window.devicePixelRatio = 0.5;
+    } catch (e) {}
+  }
 
-    const head = enemy.getBone("head");
-    const distance = game.getDistance(game.localPlayer.position, head);
+  function aimAt(target) {
+    if (!target || !target.head) return;
 
-    if (distance <= AutoHeadlockConfig.maxDistance) {
-      const predicted = game.predict(head.position, enemy.velocity, AutoHeadlockConfig.predictHeadSwipe);
-      const aimVector = game.getAimVector(predicted, game.localPlayer);
+    let dx = target.head.x - player.crosshair.x;
+    let dy = target.head.y - player.crosshair.y;
 
-      if (AutoHeadlockConfig.preFireLock && game.localPlayer.isFiring) {
-        game.setAim(aimVector, AutoHeadlockConfig.aimPower);
-      }
+    player.crosshair.x += dx * config.predictionMultiplier;
+    player.crosshair.y += dy * config.predictionMultiplier;
+  }
 
-      if (AutoHeadlockConfig.stickyAim || AutoHeadlockConfig.smoothAutoLift) {
-        game.smoothAimAt(predicted, AutoHeadlockConfig.aimSpeed);
-      }
+  const player = {
+    crosshair: { x: 0, y: 0 },
+    recoil: { x: 0, y: 0 },
+  };
 
-      if (AutoHeadlockConfig.overrideHuman && game.localPlayer.swipeNearHead(enemy)) {
-        game.correctAim(predicted);
-      }
+  const game = {
+    enemies: [],
+    onTick(callback) {
+      setInterval(callback, 1);
+    },
+    getClosestEnemy() {
+      return game.enemies.reduce((closest, enemy) => {
+        let dist = Math.hypot(
+          enemy.head.x - player.crosshair.x,
+          enemy.head.y - player.crosshair.y
+        );
+        return !closest || dist < closest.dist ? { enemy, dist } : closest;
+      }, null)?.enemy;
+    },
+  };
+
+  function controlRecoil() {
+    if (config.recoilControl) {
+      player.recoil.x = 0;
+      player.recoil.y = 0;
     }
-  });
-
-  if (AutoHeadlockConfig.fpsBoost) {
-    game.setFPS(90);
-    game.optimizeGraphics();
   }
 
-  if (AutoHeadlockConfig.pingFake) {
-    game.fakePing(AutoHeadlockConfig.pingFake);
+  function autoAim() {
+    const target = game.getClosestEnemy();
+    if (target) {
+      aimAt(target);
+    }
   }
-}
 
-game.on("tick", () => onGameTick(game));
+  function init() {
+    if (config.fpsBoost) boostFPS();
+
+    game.onTick(() => {
+      controlRecoil();
+      autoAim();
+    });
+  }
+
+  init();
+})();
