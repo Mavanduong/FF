@@ -1,58 +1,74 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v12.5-UltraSquadGod
-// @version      12.5
-// @description  Ghim đầu 1000% sức mạnh – Không dính thân/chân – Full tốc độ hút đầu mọi tình huống
+// @name         AutoHeadlockProMax v13.0-GodSquadUltra
+// @version      13.0
+// @description  Ghim đầu toàn diện Squad – Vuốt nhẹ dính đầu – Ưu tiên head 1000% – Không lệch – Không hụt – AntiBot
 // ==/UserScript==
 
-const config = {
-  aimPower: 999999,             // Siêu lực hút
-  lockSpeed: 9999,              // Siêu tốc độ
-  predictFactor: 1.75,          // Dự đoán di chuyển
-  headPriority: true,           // Ưu tiên đầu tuyệt đối
-  avoidBodyZone: true,          // Bỏ qua vùng thân
-  avoidLowerZone: true,         // Bỏ qua thân dưới
-  stickyLock: true,             // Ghim dính tuyệt đối
-  dynamicCorrection: true,      // Tự điều chỉnh khi vuốt lệch
-  maxRange: 180,                // Tăng khoảng cách khóa
-  reaimDelay: 0,                // Không delay khi khóa lại
-  burstControl: true,           // Giữ lock từng viên
-  overrideHumanSwipe: true,     // Vuốt lệch vẫn auto vào đầu
-  squadLockMode: true,          // Ưu tiên mục tiêu nguy hiểm
+const GodLock = {
+  enabled: true,
+  aimPower: 9999,
+  stickyRange: 150,
+  autoLockHead: true,
+  burstFire: true,
+  burstCount: 4,
+  fireRate: 0,
+  predictionPower: 1000,
+  predictionFactor: 1.8,
+  autoHeadCorrect: true,
+  correctionThreshold: 1.0,
+  humanSwipeOverride: true,
+  maxSwipeAssist: 100,
+  squadPriority: true,
+  lockMostDangerous: true,
+  avoidWallLock: true,
+  adjustForScope: true,
+  dynamicScopeBoost: {
+    hipfire: { aimSpeed: 5000, factor: 1.4 },
+    redDot: { aimSpeed: 6000, factor: 1.5 },
+    2:      { aimSpeed: 6500, factor: 1.6 },
+    4:      { aimSpeed: 7000, factor: 1.8 }
+  },
+  lockCurve: (dist) => dist < 30 ? 1.8 : dist < 60 ? 1.4 : 1.1,
 };
 
-function onEnemyDetected(enemy) {
-  if (!enemy.visible || enemy.health <= 0) return;
+function onGameTick(game) {
+  if (!GodLock.enabled || !game.hasEnemyInSight()) return;
 
-  let aimZone = enemy.head;
+  const enemies = game.getEnemiesSortedByDanger();
+  const target = enemies.find(e => e.visible && !e.isBehindWall);
+  if (!target) return;
 
-  if (config.avoidBodyZone && aimZone === enemy.body) return;
-  if (config.avoidLowerZone && (aimZone === enemy.legs || aimZone === enemy.feet)) return;
+  const head = target.getBone("head");
+  if (!head) return;
 
-  if (config.headPriority) {
-    aimZone = enemy.head;
+  const dist = game.distanceTo(head);
+  const curve = GodLock.lockCurve(dist);
+  const prediction = target.velocity.clone().multiplyScalar(GodLock.predictionFactor * curve);
+  const aimPosition = head.position.clone().add(prediction);
+
+  if (GodLock.autoHeadCorrect) {
+    const delta = game.crosshair.distanceTo(head.position);
+    if (delta > GodLock.correctionThreshold)
+      game.crosshair.moveToward(head.position, GodLock.aimPower);
   }
 
-  game.lockTarget({
-    target: enemy,
-    zone: aimZone,
-    speed: config.lockSpeed,
-    power: config.aimPower,
-    sticky: config.stickyLock,
-    predict: config.predictFactor,
-    dynamic: config.dynamicCorrection,
-  });
+  if (GodLock.humanSwipeOverride && game.player.isSwiping) {
+    const swipeAccuracy = game.estimateSwipeAccuracy(head.position);
+    if (swipeAccuracy > 0.7) {
+      game.crosshair.snapTo(head.position, GodLock.maxSwipeAssist);
+    }
+  } else {
+    game.crosshair.snapTo(aimPosition, GodLock.aimPower);
+  }
+
+  if (GodLock.burstFire && game.canShoot()) {
+    for (let i = 0; i < GodLock.burstCount; i++) {
+      setTimeout(() => game.fire(), i * GodLock.fireRate);
+    }
+  }
 }
 
-game.on('tick', () => {
-  const enemies = game.getEnemiesInRange(config.maxRange);
-  const validEnemies = enemies.filter(e => e.visible && e.health > 0);
-
-  if (config.squadLockMode) {
-    validEnemies.sort((a, b) => b.damageOutput - a.damageOutput); // Ưu tiên địch nguy hiểm
-  }
-
-  const target = validEnemies[0];
-  if (target) {
-    onEnemyDetected(target);
-  }
-});
+// Giả lập Tick
+setInterval(() => {
+  if (typeof game !== 'undefined') onGameTick(game);
+}, 16);
