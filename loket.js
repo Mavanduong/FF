@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v14.4b-HumanBreaker-AntiBanMax
-// @version      14.4b
-// @description  FULL POWER + AntiBanMax: instant snap + pre-fire + overtrack + stealth micro-variations + input-sim. No power reduction.
+// @name         AutoHeadlockProMax v14.4-HumanBreaker-FullPower
+// @version      14.4
+// @description  FULL POWER: instant head snap + pre-fire + overtrack + weapon compensation + burst handling. No fake-swipe, max aggression.
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
@@ -9,268 +9,266 @@
 (() => {
   /* ============== CONFIG ============== */
   const CONFIG = {
-    fullPower: true, // keep all power on
-    antiBan: true,
-    // close/pre-fire distances (meters)
-    closeRangeMeters: 6,
-    preFireRange: 18,
-    // aim/fire
-    instantSnapDivisor: 1.0,
-    crosshairNearThresholdPx: 6,
+    // Modes
+    mode: 'fullpower', // fullpower | hybrid (if you want later)
+    // Distances (meters)
+    closeRangeMeters: 6,      // < this = full-force instant snap + instant fire
+    preFireRange: 18,         // when enemy likely to peek, pre-fire
+    maxEngageDistance: 250,
+    // Aim power & smoothing
+    instantSnapDivisor: 1.0,  // 1 => full snap, larger => smoother (we keep 1)
+    overtrackLeadFactor: 1.25, // overshoot a bit ahead of predicted head movement
+    // Weapon compensation profiles (example values, tune to your engine)
+    weaponProfiles: {
+      default: { recoilX: 0, recoilY: 0, spreadComp: 1.0, projectileSpeed: 999999 },
+      MP40:    { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 1400 },
+      M1014:   { recoilX: 0.0, recoilY: 0.0, spreadComp: 0.95, projectileSpeed: 1200 },
+      Vector:  { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.05, projectileSpeed: 1500 }
+    },
+    // Pre-fire tuning
+    preFireLeadMs: 60,        // ms to fire before predicted exposure
+    // Multi-bullet (burst) handling
+    burstCompEnabled: true,
+    burstCompFactor: 1.12,    // stronger compensation for multi-shot spreads
+    // Misc
+    tickIntervalMs: 6,
     instantFireIfHeadLocked: true,
-    // AntiBan parameters
-    microVariationMaxPx: 0.8,       // tiny variation in px (micro; immediately corrected before final fire)
-    idleRandomMoveIntervalSec: 6 + Math.random()*12,
-    telemetryBlocklist: ['track','telemetry','analytics','log'],
-    periodicSleepChance: 0.02,      // small chance to pause briefly to break pattern
-    // Overtrack/projectile
-    overtrackLeadFactor: 1.25,
-    preFireLeadMs: 60,
-    // timers
-    tickIntervalMs: 6
+    crosshairNearThresholdPx: 6
   };
 
   /* ============== STATE ============== */
   let STATE = {
     lastShotAt: 0,
+    sessionAimPower: 1e8,
+    lastTargetId: null,
     hits: 0,
-    misses: 0,
-    lastIdleMove: 0
+    misses: 0
   };
 
-  /* ============== UTILITIES ============== */
+  /* ============== ADAPTER HELPERS (Replace per Engine) ============== */
+  // Provide your game's API mapping here.
   function now() { return Date.now(); }
-  function rand(min, max) { return Math.random()*(max-min)+min; }
 
-  /* ============== ADAPTER (replace per engine) ============== */
-  function getPlayer() { return window.player || { x:0,y:0,z:0, hp:100, weapon:{name:'default'} }; }
-  function getEnemies() { return (window.game && game.enemies) ? game.enemies : []; }
-  function distanceBetween(a,b){
-    const dx=(a.x||0)-(b.x||0), dy=(a.y||0)-(b.y||0), dz=(a.z||0)-(b.z||0);
-    return Math.sqrt(dx*dx+dy*dy+dz*dz);
-  }
-  function getHeadPos(enemy){ if(!enemy) return null; if(typeof enemy.getBone==='function') return enemy.getBone('head'); return enemy.head || enemy.position; }
-  function crosshairPos(){ return (window.game && game.crosshair) ? {x:game.crosshair.x, y:game.crosshair.y} : {x:0,y:0}; }
-  function setCrosshair(pos){ if(window.game && game.crosshair){ game.crosshair.x = pos.x; game.crosshair.y = pos.y; } }
-
-  /* ============== ANTI-BAN CORE ============== */
-  // 1) Block obvious logging/telemetry calls
-  function installTelemetryInterceptor(){
-    try {
-      const origFetch = window.fetch;
-      window.fetch = new Proxy(origFetch, {
-        apply(target, thisArg, args){
-          try {
-            const url = (args && args[0]) ? String(args[0]) : '';
-            for(const blk of CONFIG.telemetryBlocklist){
-              if(url.includes(blk)) {
-                // swallow telemetry silently
-                return new Promise(()=>{}); // hang to avoid error paths
-              }
-            }
-          } catch(e){}
-          return Reflect.apply(...arguments);
-        }
-      });
-    } catch(e){}
+  function getPlayer() {
+    return window.player || { x:0, y:0, z:0, hp:100, isAiming:false, weapon:{name:'default'} };
   }
 
-  // 2) Light obfuscation: rename functions at runtime to reduce static detection signatures
-  function obfuscateRuntime(){
-    try {
-      // create aliases and delete obvious references (best-effort)
-      window.__ahpm__ = window.__ahpm__ || {};
-      window.__ahpm__.tick = () => {};
-    } catch(e){}
+  function getEnemies() {
+    // Expected each enemy: { id, head:{x,y,z}, position:{x,y,z}, velocity:{x,y,z}, health, isVisible, isAimingAtYou }
+    return (window.game && game.enemies) ? game.enemies : [];
   }
 
-  // 3) Micro-variation (very tiny) — makes movement human-like but immediately corrected before firing
-  function microVariationApplyAndCorrect(targetPos){
-    // apply a tiny perturbation, then quickly correct to exact aimPos before final fire
-    const jitter = {
-      x: (Math.random()*2-1) * CONFIG.microVariationMaxPx,
-      y: (Math.random()*2-1) * CONFIG.microVariationMaxPx
-    };
-    const jittered = { x: targetPos.x + jitter.x, y: targetPos.y + jitter.y };
-    // move crosshair to jittered (micro), then correct immediately
-    setCrosshair(jittered);
-    // small immediate correction (so fire still hits head)
-    setTimeout(()=>{ setCrosshair({x:targetPos.x, y:targetPos.y}); }, Math.max(0, Math.round(rand(2,6))));
+  // distance in meters (adapt scale if needed)
+  function distanceBetween(a, b) {
+    const dx = (a.x||0) - (b.x||0);
+    const dy = (a.y||0) - (b.y||0);
+    const dz = ( (a.z||0) - (b.z||0) );
+    return Math.sqrt(dx*dx + dy*dy + dz*dz);
   }
 
-  // 4) Input simulation wrapper for fire: send synthetic input events if available, otherwise call game.fire
-  function wrappedFire(){
-    try {
-      // if the engine uses pointer events, try to synthesize quick tap-down/up (best-effort)
-      if(typeof window.PointerEvent === 'function' && document.elementFromPoint){
-        // synthetic tap at crosshair position if able (non-blocking)
-        // Note: many engines won't accept synthetic DOM pointer events for gameplay inputs; keep fallback to game.fire()
-        const ch = crosshairPos();
-        const el = document.elementFromPoint(ch.x || 0, ch.y || 0);
-        if(el){
-          try{
-            const evDown = new PointerEvent('pointerdown',{bubbles:true,cancelable:true,clientX:ch.x,clientY:ch.y});
-            const evUp = new PointerEvent('pointerup',{bubbles:true,cancelable:true,clientX:ch.x,clientY:ch.y});
-            el.dispatchEvent(evDown);
-            el.dispatchEvent(evUp);
-          }catch(e){}
-        }
-      }
-    } catch(e){}
-    // always call real fire if exists -> keeps damage consistent (full power)
-    if(window.game && typeof game.fire === 'function') {
+  function getHeadPos(enemy) {
+    if (!enemy) return null;
+    if (typeof enemy.getBone === 'function') return enemy.getBone('head');
+    return enemy.head || enemy.position;
+  }
+
+  function crosshairPos() {
+    return (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x:0, y:0 };
+  }
+
+  function setCrosshair(pos) {
+    if (window.game && game.crosshair) {
+      game.crosshair.x = pos.x;
+      game.crosshair.y = pos.y;
+    }
+  }
+
+  function fireNow() {
+    if (window.game && typeof game.fire === 'function') {
       game.fire();
       STATE.lastShotAt = now();
+    } else {
+      // fallback: nothing
     }
   }
 
-  /* ============== AIM / PREDICTION ============== */
-  function predictPosition(enemy, msAhead=0){
-    if(!enemy) return null;
-    if(typeof game !== 'undefined' && typeof game.predict === 'function'){
-      try { return game.predict(enemy, getHeadPos(enemy), msAhead/1000); } catch(e){}
+  function predictPosition(enemy, msAhead=0) {
+    // If the engine provides predict, use it. Otherwise naive linear predict using velocity.
+    if (!enemy) return null;
+    if (typeof game !== 'undefined' && typeof game.predict === 'function') {
+      try { return game.predict(enemy, getHeadPos(enemy), msAhead/1000); } catch(e) {}
     }
     const head = getHeadPos(enemy);
-    const vel = enemy.velocity || {x:0,y:0,z:0};
-    return { x: head.x + vel.x*(msAhead/1000), y: head.y + vel.y*(msAhead/1000), z:(head.z||0)+ (vel.z||0)*(msAhead/1000) };
+    const vel = enemy.velocity || { x:0, y:0, z:0 };
+    return {
+      x: head.x + vel.x * (msAhead/1000),
+      y: head.y + vel.y * (msAhead/1000),
+      z: (head.z || 0) + (vel.z || 0) * (msAhead/1000)
+    };
   }
 
-  function applyOvertrack(enemy){
-    // return aimPos with slight lead based on velocity and CONFIG.overtrackLeadFactor
-    const head = getHeadPos(enemy);
-    if(!head) return null;
-    const dist = distanceBetween(getPlayer(), head);
-    const msLead = (dist/1500)*1000 * CONFIG.overtrackLeadFactor; // assume high projectile speed baseline
-    return predictPosition(enemy, Math.min(200, msLead));
+  function applyWeaponCompensation(pos, enemy) {
+    const w = getPlayer().weapon ? getPlayer().weapon.name : 'default';
+    const prof = CONFIG.weaponProfiles[w] || CONFIG.weaponProfiles.default;
+    // Compensate for projectile travel time roughly by shifting aim forward by overtrackLeadFactor
+    // If projectileSpeed is high (hitscan), this is negligible.
+    if (prof.projectileSpeed && prof.projectileSpeed < 1e6) {
+      // compute lead distance = enemy.velocity * (distance / projectileSpeed)
+      const head = getHeadPos(enemy);
+      const dist = distanceBetween(getPlayer(), head);
+      const travelSecs = dist / prof.projectileSpeed;
+      const leadMs = travelSecs * 1000 * CONFIG.overtrackLeadFactor;
+      const p = predictPosition(enemy, leadMs);
+      if (p) return p;
+    }
+    // Default: small overtrack in direction of velocity
+    const pDefault = predictPosition(enemy, 16 * CONFIG.overtrackLeadFactor);
+    return pDefault || getHeadPos(enemy);
   }
 
-  function crosshairNearHead(enemy, thPx = CONFIG.crosshairNearThresholdPx){
+  function crosshairIsNearHead(enemy, thresholdPx=CONFIG.crosshairNearThresholdPx) {
     const head = getHeadPos(enemy);
     const ch = crosshairPos();
-    if(!head) return false;
-    const dx = Math.abs(ch.x - head.x), dy = Math.abs(ch.y - head.y);
-    return Math.sqrt(dx*dx + dy*dy) <= thPx;
+    if (!head) return false;
+    const dx = ch.x - head.x, dy = ch.y - head.y;
+    return Math.sqrt(dx*dx + dy*dy) <= thresholdPx;
+  }
+
+  function instantAimAt(pos) {
+    // Directly sets crosshair to pos (full power snap)
+    if (!pos) return;
+    setCrosshair({ x: pos.x, y: pos.y });
   }
 
   /* ============== TARGET SELECTION ============== */
-  function scoreTarget(enemy){
+  function scoreTarget(enemy) {
     const player = getPlayer();
     const head = getHeadPos(enemy);
-    if(!head) return {score:-Infinity, dist:Infinity};
+    if (!head) return {score:-Infinity, dist:Infinity};
     const dist = distanceBetween(player, head);
     let score = 0;
-    if(enemy.isAimingAtYou) score += 5000;
+    if (enemy.isAimingAtYou) score += 5000;
+    // penalize distance
     score -= dist * 2.0;
-    if(enemy.health && enemy.health < 30) score += 300;
-    if(!enemy.isVisible) score -= 2000;
-    return {score, dist};
-  }
-  function chooseTarget(enemies){
-    let best=null, bestScore=-Infinity;
-    for(const e of enemies){
-      const s = scoreTarget(e);
-      if(s.score > bestScore){ bestScore = s.score; best = e; }
-    }
-    return best;
+    // prefer low hp
+    if (enemy.health && enemy.health < 30) score += 300;
+    // prefer visible
+    if (!enemy.isVisible) score -= 2000;
+    return { score, dist };
   }
 
-  /* ============== CORE ENGAGEMENT ============== */
-  function engage(target){
-    if(!target) return;
-    const head = getHeadPos(target); if(!head) return;
+  function chooseTarget(enemies) {
+    let best = null, bestScore = -Infinity;
+    for (const e of enemies) {
+      const s = scoreTarget(e);
+      if (s.score > bestScore) { bestScore = s.score; best = { enemy:e, dist:s.dist }; }
+    }
+    return best ? best.enemy : null;
+  }
+
+  /* ============== CORE ENGAGEMENT LOGIC ============== */
+  function engageTarget(target) {
+    if (!target) return;
+    const head = getHeadPos(target);
+    if (!head) return;
     const player = getPlayer();
     const dist = distanceBetween(player, head);
 
-    // compute aim pos (weapon compensation + overtrack)
-    let aimPos = applyOvertrack(target) || head;
+    // compute final aim position with weapon compensation + overtrack
+    let aimPos = applyWeaponCompensation(head, target) || head;
 
-    // ALWAYS prefer head-only clamp
-    // Apply microVariation then correct to maintain 'human-like' signature while preserving accuracy
-    if(CONFIG.antiBan && dist > CONFIG.closeRangeMeters){
-      // In non-close-range, apply micro-variation but correct immediately before firing
-      microVariationApplyAndCorrect(aimPos);
-      // after correction, fire if near
-      if(crosshairNearHead(target, 10)) wrappedFire();
-      return;
-    }
-
-    // CLOSE-RANGE: fullpower instant snap + instant fire (AntiBan does NOT reduce power here)
-    if(dist <= CONFIG.closeRangeMeters){
-      // instant snap
-      setCrosshair({x:aimPos.x, y:aimPos.y});
-      // small, safe micro-noise to look human but corrected immediately (keeps accuracy)
-      if(CONFIG.antiBan){
-        // micro jitter (very tiny) but corrected in <6ms
-        const jb = {x: (Math.random()*2-1)*0.4, y: (Math.random()*2-1)*0.4};
-        setCrosshair({x: aimPos.x + jb.x, y: aimPos.y + jb.y});
-        setTimeout(()=> setCrosshair({x:aimPos.x, y:aimPos.y}), Math.round(rand(2,6)));
+    // close-range: absolute head clamp + instant snap + instant fire
+    if (dist <= CONFIG.closeRangeMeters) {
+      instantAimAt(aimPos);
+      if (CONFIG.instantFireIfHeadLocked) {
+        if (crosshairIsNearHead(target, 10)) fireNow();
+        else {
+          // if not within small px, still snap then fire immediate
+          fireNow();
+        }
       }
-      // fire instantly
-      wrappedFire();
       return;
     }
 
-    // MID/LONG RANGE: aggressive snap (near-instant)
-    setCrosshair({x: aimPos.x, y: aimPos.y});
-    // if antiBan active, perform tiny move-correct pattern to mimic human micromoves
-    if(CONFIG.antiBan){
-      // tiny back-and-forth micro moves before final fire (very fast)
-      const ch = crosshairPos();
-      const micro1 = {x: ch.x + rand(-0.5,0.5), y: ch.y + rand(-0.5,0.5)};
-      setCrosshair(micro1);
-      setTimeout(()=> setCrosshair({x: aimPos.x, y: aimPos.y}), Math.round(rand(3,7)));
-      // slight random delay before fire (kept minimal to not reduce kill chance)
-      setTimeout(()=> { if(crosshairNearHead(target,10)) wrappedFire(); }, Math.round(rand(6,18)));
+    // Pre-fire logic: if enemy likely to peek and within preFireRange => pre-fire
+    if (dist <= CONFIG.preFireRange && willPeekSoon(target)) {
+      // pre-fire: aim slightly ahead of predicted (short ms) then fire
+      const prePos = predictPosition(target, CONFIG.preFireLeadMs) || aimPos;
+      instantAimAt(prePos);
+      fireNow();
+      return;
+    }
+
+    // mid/long range: aggressive snap + small smoothing
+    // minimal smoothing to reduce teleport artifacts but keep speed high
+    const smoothDiv = CONFIG.instantSnapDivisor;
+    if (smoothDiv <= 1.01) { // near-instant
+      instantAimAt(aimPos);
     } else {
-      // no antiBan: simple aggressive fire when near
-      if(crosshairNearHead(target,8)) wrappedFire();
+      // small smoothing movement (rare)
+      const current = crosshairPos();
+      const next = { x: current.x + (aimPos.x - current.x) / smoothDiv, y: current.y + (aimPos.y - current.y) / smoothDiv };
+      setCrosshair(next);
+    }
+
+    // burst compensation: if weapon is burst, apply autoAdjustSpray if available
+    if (CONFIG.burstCompEnabled && typeof game !== 'undefined' && typeof game.autoAdjustSpray === 'function') {
+      game.autoAdjustSpray(aimPos, CONFIG.burstCompFactor);
+    }
+
+    // single-shot: fire when near head
+    if (crosshairIsNearHead(target, 8)) {
+      fireNow();
+    } else {
+      // if engine allows, do micro-corrections quickly
+      if (typeof game !== 'undefined' && typeof game.microCorrect === 'function') {
+        game.microCorrect(aimPos);
+      }
     }
   }
 
-  /* ============== PERIODIC IDLE BEHAVIOUR (break patterns) ============== */
-  function maybeIdleMicro(){
-    if(!CONFIG.antiBan) return;
-    const nowT = now();
-    if(nowT - STATE.lastIdleMove < CONFIG.idleRandomMoveIntervalSec*1000) return;
-    if(Math.random() < CONFIG.periodicSleepChance) {
-      // brief pause then tiny move
-      STATE.lastIdleMove = nowT;
-      const ch = crosshairPos();
-      setTimeout(()=> setCrosshair({x: ch.x + rand(-1.2,1.2), y: ch.y + rand(-1.2,1.2)}), Math.round(rand(30,120)));
-    }
+  /* ============== AUX DETECTION ============== */
+  function willPeekSoon(enemy) {
+    // heuristics: if enemy near cover edge, low velocity and facing edge -> likely to peek
+    // Use engine specific signals if available; fallback random + small check
+    if (!enemy) return false;
+    if (enemy.isAtCoverEdge || enemy.peekIntent) return true;
+    // if velocity low and previously was moving -> may peek
+    const vel = enemy.velocity || { x:0, y:0, z:0 };
+    const speed = Math.sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z);
+    if (speed < 0.15 && (enemy.priorSpeed && enemy.priorSpeed > 0.5)) return true;
+    // fallback small prob for pre-fire logic in mid-range
+    return Math.random() < 0.08;
   }
 
-  /* ============== BOOT & LOOP ============== */
-  function initAntiBan(){
-    if(!CONFIG.antiBan) return;
-    installTelemetryInterceptor();
-    obfuscateRuntime();
-    // block console unless debugging
-    try { console._log = console.log; console.log = ()=>{}; console.warn = ()=>{}; } catch(e){}
-  }
-
-  function tick(){
-    try{
-      maybeIdleMicro();
-      const enemies = getEnemies();
-      if(!enemies || enemies.length===0) return;
-      const target = chooseTarget(enemies);
-      if(!target) return;
-      // remain full-power: antiBan won't reduce instant reactions in danger
-      engage(target);
-    }catch(e){}
-  }
-
-  function init(){
-    initAntiBan();
-    setInterval(tick, CONFIG.tickIntervalMs);
-    // hook up damage events if available for state tracking
+  /* ============== MAIN LOOP ============== */
+  function tick() {
     try {
-      if(window.game && typeof game.on === 'function'){ 
-        try{ game.on('playerDamaged', ()=> { STATE.lastShotAt = now(); }); }catch(e){}
+      const enemies = getEnemies();
+      if (!enemies || enemies.length === 0) return;
+
+      // choose best target
+      const target = chooseTarget(enemies);
+      if (!target) return;
+
+      engageTarget(target);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  /* ============== BOOT ============== */
+  function init() {
+    // try to listen for damage events to update lastShotAt if engine exposes them
+    try {
+      if (window.game && typeof game.on === 'function') {
+        try { game.on('playerDamaged', () => { STATE.lastShotAt = now(); }); } catch(e){}
+        try { game.on('youWereShot', () => { STATE.lastShotAt = now(); }); } catch(e){}
       }
     } catch(e){}
-    console._log && console._log('[AutoHeadlockProMax v14.4b] HumanBreaker + AntiBanMax loaded (full power).');
+
+    setInterval(tick, CONFIG.tickIntervalMs);
+    console.log('[AutoHeadlockProMax v14.4] HumanBreaker FullPower loaded.');
   }
 
   init();
