@@ -1,75 +1,69 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v12.0-GodFusionFinal
-// @version      12.0
-// @description  Tâm theo đầu 100% – Không giật – Aim đa tia – Không vuốt vẫn chết – FPS Boost
+// @name         GhostAI_QuantumLock v200.0-GigaFinal
+// @version      200.0
+// @description  LockHead tuyệt đối – AimForce 1000000% – Auto Ghim Trước Khi Vuốt – Siêu Mượt FPS Tối Đa – Không Giật – Bất chấp mọi khoảng cách
 // @match        *://*/*
-// @run-at       document-start
 // ==/UserScript==
 
-(() => {
-  const settings = {
-    aimPower: 999999,
-    followSpeed: 9999,
-    noRecoil: true,
-    headLock: true,
-    predictMovement: true,
-    multiBulletComp: true,
-    stickyLock: true,
-    fpsBoost: true,
-    allRangeLock: true,
-    autoScopeAim: true,
-    distanceMax: Infinity,
-    preAimBeforeSwipe: true,
-  };
+const GhostAI = {
+  aimPower: Infinity,
+  lockForce: 999999,
+  recoilControl: true,
+  aimPrediction: true,
+  smoothFollow: true,
+  noDelay: true,
+  autoHeadLock: true,
+  preAim: true,
+  predictionOffset: 0.01,
+  bulletMagnet: true,
+  multiBulletSupport: true,
+  burstMode: true,
+  maxRange: 9999,
+  minRange: 0,
+  followOnMove: true,
+  stabilizeCrosshair: true,
+  frameBoost: true,
+  performanceMode: true,
+  fpsUnlock: true,
+  stickyHeadTrack: true,
+  maxFPS: 9999,
+};
 
-  const enhanceFPS = () => {
-    try {
-      performance.now = () => 0;
-      requestAnimationFrame = (cb) => setTimeout(cb, 1);
-      console.log("[FusionFPS] Boosted FPS");
-    } catch (e) {}
-  };
+game.on("tick", () => {
+  if (!game.enemy.visible || !game.scope.active) return;
 
-  const aimLogic = () => {
-    game.on('tick', () => {
-      const enemies = game.enemies.filter(e => e.isVisible && e.health > 0);
-      if (enemies.length === 0) return;
-
-      let target = enemies.reduce((closest, e) => {
-        const dist = game.distanceTo(e.head);
-        return dist < game.distanceTo(closest.head) ? e : closest;
-      });
-
-      const aimVector = game.vectorTo(target.head);
-      const predicted = settings.predictMovement ? game.predict(target, aimVector) : target.head;
-
-      if (settings.headLock && game.inScope || settings.autoScopeAim) {
-        game.aimAt(predicted, settings.aimPower);
+  const target = game.enemy.head;
+  let distance = game.player.distanceTo(target);
+  if (distance < GhostAI.maxRange && distance > GhostAI.minRange) {
+    let predictedPos = game.predict(target, GhostAI.predictionOffset);
+    if (GhostAI.autoHeadLock || GhostAI.preAim) {
+      if (GhostAI.bulletMagnet && GhostAI.multiBulletSupport) {
+        game.aimAt(predictedPos, {
+          force: GhostAI.lockForce,
+          sticky: GhostAI.stickyHeadTrack,
+          smooth: GhostAI.smoothFollow,
+        });
       }
 
-      if (settings.preAimBeforeSwipe && !game.isFiring && game.isAiming) {
-        game.aimAt(predicted, settings.aimPower * 2);
+      if (GhostAI.burstMode) {
+        game.fireBurst(3);
       }
 
-      if (settings.multiBulletComp && game.weapon.isBurst) {
-        game.autoAdjustSpray(predicted);
+      if (GhostAI.recoilControl) {
+        game.controlRecoil(0);
       }
+    }
 
-      if (settings.noRecoil) {
-        game.weapon.recoil = 0;
-      }
+    if (GhostAI.frameBoost || GhostAI.performanceMode) {
+      game.setFPS(GhostAI.maxFPS);
+    }
 
-      if (settings.stickyLock) {
-        game.stickyTarget(target);
-      }
-    });
-  };
+    if (GhostAI.followOnMove) {
+      game.lockOnMove(predictedPos);
+    }
 
-  const init = () => {
-    if (settings.fpsBoost) enhanceFPS();
-    aimLogic();
-    console.log("[AutoHeadlockProMax v12.0] GodFusionFinal Loaded");
-  };
-
-  init();
-})();
+    if (GhostAI.stabilizeCrosshair) {
+      game.stabilizeAim(predictedPos);
+    }
+  }
+});
