@@ -1,96 +1,65 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v14.0-FinalGigaLock (QuantumLaserAI)
-// @version      14.0
-// @description  Ghim đầu tuyệt đối – Tâm AI di chuyển về đầu – Không vuốt cũng ghim – Tăng FPS – Boss chạy không thoát
+// @name         AutoHeadlockProMax v11.9-GodModeX
+// @version      11.9
+// @description  Ghim đầu tự động AI – Vuốt hay không vuốt đều aim – FPS Boost + Max Stability – Shadowrocket Ready
 // ==/UserScript==
 
-const config = {
-  autoHeadlock: true,
-  quantumLaserAim: true,
-  aimPrediction: true,
-  preFireHeadSnap: true,
-  dynamicAimSpeed: 9999,
-  aimStickyFactor: 1000,
-  recoilControl: true,
+const AutoHeadlockConfig = {
+  aimPower: 9999,
+  aimSpeed: 9999,
+  preFireLock: true, // Tự aim lên đầu khi nhấn bắn, không cần vuốt
+  maxDistance: Infinity,
+  stickyAim: true,
+  dynamicCorrection: true,
+  followHeadDirection: true,
+  smoothAutoLift: true,
   fpsBoost: true,
-  ultraSmooth: true,
-  maxFPS: 240,
-  enemyScanRadius: 999,
-  movementPrediction: true,
-  autoSwipeAssist: true,
-  lockPriority: "head",
-  lockCorrection: true,
-  autoAimWhenMiss: true,
-  overrideHumanDelay: true,
-  predictiveOffset: true,
-  burstControl: true,
-  bossLockBoost: true,
-  dynamicTargetShift: true,
-  fireReactionTime: 0,
+  pingFake: 25,
+  multiBulletSupport: true,
+  predictHeadSwipe: true,
+  antiMiss: true,
+  laserLock: true,
+  wallCheck: false,
+  memoryAim: true,
+  stableAllMove: true,
+  overrideHuman: true
 };
 
-function aimAt(target) {
-  if (!target || !config.autoHeadlock) return;
+function onGameTick(game) {
+  if (!game || !game.enemies || !game.localPlayer) return;
 
-  let aimPos = predictHead(target);
-  if (config.preFireHeadSnap) moveCrosshair(aimPos, true);
-  else moveCrosshair(aimPos);
+  game.enemies.forEach(enemy => {
+    if (!enemy.isAlive || !enemy.isVisible) return;
 
-  if (config.autoAimWhenMiss && !isCrosshairOnHead()) {
-    moveCrosshair(aimPos, true); // Correction lock
+    const head = enemy.getBone("head");
+    const distance = game.getDistance(game.localPlayer.position, head);
+
+    if (distance <= AutoHeadlockConfig.maxDistance) {
+      const predicted = game.predict(head.position, enemy.velocity, AutoHeadlockConfig.predictHeadSwipe);
+      const aimVector = game.getAimVector(predicted, game.localPlayer);
+
+      if (AutoHeadlockConfig.preFireLock && game.localPlayer.isFiring) {
+        game.setAim(aimVector, AutoHeadlockConfig.aimPower);
+      }
+
+      if (AutoHeadlockConfig.stickyAim || AutoHeadlockConfig.smoothAutoLift) {
+        game.smoothAimAt(predicted, AutoHeadlockConfig.aimSpeed);
+      }
+
+      if (AutoHeadlockConfig.overrideHuman && game.localPlayer.swipeNearHead(enemy)) {
+        game.correctAim(predicted);
+      }
+    }
+  });
+
+  if (AutoHeadlockConfig.fpsBoost) {
+    game.setFPS(90);
+    game.optimizeGraphics();
   }
 
-  if (config.autoSwipeAssist && isNearHead()) {
-    fire();
-  }
-}
-
-function predictHead(target) {
-  let lead = target.velocity * config.dynamicTargetShift;
-  let predicted = {
-    x: target.head.x + lead.x,
-    y: target.head.y + lead.y - 5,
-  };
-  return predicted;
-}
-
-function moveCrosshair(position, instant = false) {
-  let speed = instant ? Infinity : config.dynamicAimSpeed;
-  // Internal logic to move aim (omitted)
-}
-
-function fire() {
-  if (config.fireReactionTime === 0) {
-    // Instant shot
-    triggerFire();
-  } else {
-    setTimeout(triggerFire, config.fireReactionTime);
+  if (AutoHeadlockConfig.pingFake) {
+    game.fakePing(AutoHeadlockConfig.pingFake);
   }
 }
 
-function triggerFire() {
-  // Internal logic to fire weapon (omitted)
-}
-
-function isCrosshairOnHead() {
-  // Check if locked exactly on head (omitted)
-  return true;
-}
-
-function isNearHead() {
-  // If within correction threshold
-  return true;
-}
-
-// FPS Boost logic
-if (config.fpsBoost) {
-  requestAnimationFrame = (cb) => setTimeout(cb, 1000 / config.maxFPS);
-}
-
-// Game loop
-game.on('tick', () => {
-  let target = game.getNearestEnemy();
-  if (target) {
-    aimAt(target);
-  }
-});
+game.on("tick", () => onGameTick(game));
