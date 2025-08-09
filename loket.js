@@ -14,7 +14,7 @@
     maxLeadMs: 220,
     weaponProfiles: {
       default: { projectileSpeed: 99999999, multiBulletCount: 10, burstCompFactor: 1.5 },
-      MP40:    { projectileSpeed: 99999999, multiBulletCount: 12, burstCompFactor: 999999 },
+      MP40:    { projectileSpeed: 99999999, multiBulletCount: 19, burstCompFactor: 999999 },
       M1014:   { projectileSpeed: 99999999, multiBulletCount: 8,  burstCompFactor: 1.8 },
       Vector:  { projectileSpeed: 99999999, multiBulletCount: 12, burstCompFactor: 1.6 }
     },
