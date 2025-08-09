@@ -10,7 +10,7 @@
   const CONFIG = {
     tickIntervalMs: 1,
     crosshairNearThresholdPx: 900,
-    clampStepPx: 0.005,
+    clampStepPx: 0.00005,
     maxLeadMs: 220,
     weaponProfiles: {
       default: { projectileSpeed: 99999999, multiBulletCount: 10, burstCompFactor: 1.5 },
@@ -19,7 +19,7 @@
       Vector:  { projectileSpeed: 99999999, multiBulletCount: 12, burstCompFactor: 1.6 }
     },
     instantFireIfHeadLocked: true, // Bắn ngay khi tâm đủ gần đầu
-    smoothingFactor: 2,
+    smoothingFactor: 99,
     shakeAmplitudePx: 2.5, // nhẹ hơn chút để vẫn ảo mà không bị giật
   };
 
