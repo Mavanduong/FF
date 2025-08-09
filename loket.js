@@ -1,89 +1,44 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v14.4c-HumanBreaker-FullPower-NoAntiBan
-// @version      14.4c
-// @description  FULL POWER: instant head snap + pre-fire + overtrack + weapon compensation + burst handling. AntiBan removed (max performance).
+// @name         AutoHeadlockProMax v14.4c-MaxStats-GodMode
+// @version      14.4c-GM
+// @description  FULL POWER ++ : instant head snap + pre-fire + overtrack + god-tier weapon compensation + burst handling (No AntiBan).
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
 
 (() => {
-  /* ============== CONFIG ============== */
   const CONFIG = {
-    // mode
-    mode: 'fullpower',
-    // distances (meters)
-    closeRangeMeters: 6,      // <= this => instant snap + instant fire
-    preFireRange: 18,
-    maxEngageDistance: 250,
-    // aim & smoothing
-    instantSnapDivisor: 1.0,      // 1 => full snap
-    overtrackLeadFactor: 1.25,    // lead factor for moving targets
-    preFireLeadMs: 60,            // ms to pre-fire before peek
-    // weapons (tweak per-engine)
+    mode: 'godmode',
+    closeRangeMeters: 10,          // tăng để snap + fire ở xa hơn
+    preFireRange: 30,               // tăng tầm pre-fire
+    maxEngageDistance: 9999,        // không giới hạn
+    instantSnapDivisor: 0.8,        // < 1 => ghim mạnh hơn 100%
+    overtrackLeadFactor: 2.0,       // dự đoán cực xa
+    preFireLeadMs: 120,             // bắn sớm hơn
     weaponProfiles: {
-      default: { projectileSpeed: 999999 },
-      MP40:    { projectileSpeed: 1400 },
-      M1014:   { projectileSpeed: 1200 },
-      Vector:  { projectileSpeed: 1500 }
+      default: { projectileSpeed: 9999999 },
+      MP40:    { projectileSpeed: 9999999 },
+      M1014:   { projectileSpeed: 9999999 },
+      Vector:  { projectileSpeed: 9999999 }
     },
-    // fire thresholds
     instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 6,
-    // loop
-    tickIntervalMs: 6,
+    crosshairNearThresholdPx: 3,    // siết tầm chết vào đầu
+    tickIntervalMs: 1,              // phản ứng cực nhanh
     burstCompEnabled: true,
-    burstCompFactor: 1.12
+    burstCompFactor: 1.25           // bù giật mạnh hơn
   };
 
-  /* ============== STATE ============== */
-  let STATE = {
-    lastShotAt: 0,
-    hits: 0,
-    misses: 0
-  };
+  let STATE = { lastShotAt: 0, hits: 0, misses: 0 };
 
-  /* ============== UTILITIES / ADAPTERS ============== */
   function now(){ return Date.now(); }
+  function getPlayer(){ return window.player || { x:0,y:0,z:0, hp:100, weapon:{name:'default'} }; }
+  function getEnemies(){ return (window.game && game.enemies) ? game.enemies : []; }
+  function distanceBetween(a,b){ const dx=(a.x||0)-(b.x||0), dy=(a.y||0)-(b.y||0), dz=(a.z||0)-(b.z||0); return Math.sqrt(dx*dx + dy*dy + dz*dz); }
+  function getHeadPos(enemy){ if(!enemy) return null; if(typeof enemy.getBone === 'function') return enemy.getBone('head'); return enemy.head || enemy.position; }
+  function crosshairPos(){ return (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x:0, y:0 }; }
+  function setCrosshair(pos){ if(window.game && game.crosshair){ game.crosshair.x = pos.x; game.crosshair.y = pos.y; } }
+  function fireNow(){ if(window.game && typeof game.fire === 'function'){ game.fire(); STATE.lastShotAt = now(); } }
 
-  // Replace/adapt these to your game's actual objects/APIs:
-  function getPlayer(){
-    return window.player || { x:0,y:0,z:0, hp:100, weapon:{name:'default'} };
-  }
-
-  function getEnemies(){
-    return (window.game && game.enemies) ? game.enemies : [];
-  }
-
-  function distanceBetween(a,b){
-    const dx=(a.x||0)-(b.x||0), dy=(a.y||0)-(b.y||0), dz=(a.z||0)-(b.z||0);
-    return Math.sqrt(dx*dx + dy*dy + dz*dz);
-  }
-
-  function getHeadPos(enemy){
-    if(!enemy) return null;
-    if(typeof enemy.getBone === 'function') return enemy.getBone('head');
-    return enemy.head || enemy.position;
-  }
-
-  function crosshairPos(){
-    return (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x:0, y:0 };
-  }
-
-  function setCrosshair(pos){
-    if(window.game && game.crosshair){
-      game.crosshair.x = pos.x;
-      game.crosshair.y = pos.y;
-    }
-  }
-
-  function fireNow(){
-    if(window.game && typeof game.fire === 'function'){
-      game.fire();
-      STATE.lastShotAt = now();
-    }
-  }
-
-  /* ============== PREDICTION & COMPENSATION ============== */
   function predictPosition(enemy, msAhead=0){
     if(!enemy) return null;
     if(typeof game !== 'undefined' && typeof game.predict === 'function'){
@@ -100,15 +55,13 @@
     const player = getPlayer();
     const wname = (player.weapon && player.weapon.name) ? player.weapon.name : 'default';
     const prof = CONFIG.weaponProfiles[wname] || CONFIG.weaponProfiles.default;
-    // lead time approximation
-    if(prof.projectileSpeed && prof.projectileSpeed < 1e6){
+    if(prof.projectileSpeed && prof.projectileSpeed < 1e8){
       const dist = distanceBetween(player, head);
       const travelSec = dist / prof.projectileSpeed;
       const leadMs = travelSec * 1000 * CONFIG.overtrackLeadFactor;
       return predictPosition(enemy, Math.min(200, leadMs));
     }
-    // default small lead
-    return predictPosition(enemy, 16 * CONFIG.overtrackLeadFactor) || head;
+    return predictPosition(enemy, 20 * CONFIG.overtrackLeadFactor) || head;
   }
 
   function crosshairIsNearHead(enemy, thresholdPx = CONFIG.crosshairNearThresholdPx){
@@ -119,21 +72,16 @@
     return Math.sqrt(dx*dx + dy*dy) <= thresholdPx;
   }
 
-  function instantAimAt(pos){
-    if(!pos) return;
-    setCrosshair({ x: pos.x, y: pos.y });
-  }
+  function instantAimAt(pos){ if(!pos) return; setCrosshair({ x: pos.x, y: pos.y }); }
 
-  /* ============== TARGET SELECTION ============== */
   function scoreTarget(enemy){
     const player = getPlayer();
     const head = getHeadPos(enemy);
     if(!head) return { score: -Infinity, dist: Infinity };
     const dist = distanceBetween(player, head);
-    let score = 0;
-    if(enemy.isAimingAtYou) score += 5000;
-    score -= dist * 2.0;
-    if(enemy.health && enemy.health < 30) score += 300;
+    let score = 10000 - dist * 1.5;
+    if(enemy.isAimingAtYou) score += 9999;
+    if(enemy.health && enemy.health < 50) score += 500;
     if(!enemy.isVisible) score -= 2000;
     return { score, dist };
   }
@@ -147,14 +95,13 @@
     return best;
   }
 
-  /* ============== ENGAGEMENT LOGIC ============== */
   function willPeekSoon(enemy){
     if(!enemy) return false;
     if(enemy.isAtCoverEdge || enemy.peekIntent) return true;
     const vel = enemy.velocity || { x:0,y:0,z:0 };
     const speed = Math.sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z);
     if(speed < 0.15 && (enemy.priorSpeed && enemy.priorSpeed > 0.5)) return true;
-    return Math.random() < 0.08;
+    return Math.random() < 0.15;
   }
 
   function engageTarget(target){
@@ -163,18 +110,14 @@
     if(!head) return;
     const player = getPlayer();
     const dist = distanceBetween(player, head);
-
-    // compute aim pos using weapon compensation & overtrack
     const aimPos = applyWeaponCompensation(target) || head;
 
-    // close-range: instant snap + instant fire
     if(dist <= CONFIG.closeRangeMeters){
       instantAimAt(aimPos);
       if(CONFIG.instantFireIfHeadLocked) fireNow();
       return;
     }
 
-    // pre-fire when peek-likely
     if(dist <= CONFIG.preFireRange && willPeekSoon(target)){
       const prePos = predictPosition(target, CONFIG.preFireLeadMs) || aimPos;
       instantAimAt(prePos);
@@ -182,24 +125,15 @@
       return;
     }
 
-    // mid/long range: aggressive snap (near-instant)
-    if(CONFIG.instantSnapDivisor <= 1.01){
-      instantAimAt(aimPos);
-    } else {
-      const cur = crosshairPos();
-      const next = { x: cur.x + (aimPos.x - cur.x)/CONFIG.instantSnapDivisor, y: cur.y + (aimPos.y - cur.y)/CONFIG.instantSnapDivisor };
-      setCrosshair(next);
-    }
+    instantAimAt(aimPos);
 
-    // burst handling if supported by engine
     if(CONFIG.burstCompEnabled && typeof game !== 'undefined' && typeof game.autoAdjustSpray === 'function'){
       game.autoAdjustSpray(aimPos, CONFIG.burstCompFactor);
     }
 
-    if(crosshairIsNearHead(target, 8)) fireNow();
+    if(crosshairIsNearHead(target, CONFIG.crosshairNearThresholdPx)) fireNow();
   }
 
-  /* ============== MAIN LOOP ============== */
   function tick(){
     try{
       const enemies = getEnemies();
@@ -210,18 +144,15 @@
     }catch(e){}
   }
 
-  /* ============== INIT ============== */
   function init(){
-    // hook damage events if available
     try{
       if(window.game && typeof game.on === 'function'){
         try{ game.on('playerDamaged', ()=>{ STATE.lastShotAt = now(); }); }catch(e){}
       }
     }catch(e){}
     setInterval(tick, CONFIG.tickIntervalMs);
-    console.log('[AutoHeadlockProMax v14.4c] HumanBreaker FullPower (No AntiBan) loaded.');
+    console.log('[AutoHeadlockProMax v14.4c] MaxStats GodMode loaded.');
   }
 
   init();
-
 })();
