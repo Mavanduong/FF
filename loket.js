@@ -1,30 +1,30 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v15.0-UltraSmooth-Calib-AntiBan
-// @version      15.0
-// @description  Ultimate: Multi-bullet ghim đầu từng viên, auto-calib cực nhanh, smoothing siêu mượt, vuốt lệch 5m tự kéo về 100%, AntiBan ảo như người thật
+// @name         AutoHeadlockProMax v15.1-UltraGodMode
+// @version      15.1
+// @description  Max all config: headlock 1000000000000%, smooth tuyệt đối, clamp nhỏ nhất, dự đoán cực đại, AntiBan ảo không thể phát hiện
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
 
 (() => {
   const CONFIG = {
-    tickIntervalMs: 1,
-    closeRangeMeters: 99999,
-    preFireRange: 80,
-    maxEngageDistance: 999999,
+    tickIntervalMs: 1,                      // Tick nhanh nhất có thể
+    closeRangeMeters: 999999,               // Mọi khoảng cách đều instant snap
+    preFireRange: 999999,                   // Pre-fire toàn bộ map
+    maxEngageDistance: 99999999,
     instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 0.8,
-    clampStepPx: 0.3,
-    calibCorrectionFactor: 0.35,
-    smoothingFactor: 0.35,   // [0-1] càng nhỏ càng mượt nhưng chậm, lớn hơn nhanh
-    overtrackLeadFactor: 15,
-    maxLeadMs: 150,
-    multiBulletDelayMs: 7,
+    crosshairNearThresholdPx: 0.1,          // Gần như chỉ bắn khi chạm đầu cực sát
+    clampStepPx: 0.1,                       // Di chuyển cực nhỏ tránh overshoot
+    calibCorrectionFactor: 1.0,             // Auto-calibrate bù lệch cực nhanh
+    smoothingFactor: 0.05,                   // Mượt như bơ, cực chậm trượt ảo
+    overtrackLeadFactor: 99999999,          // Dự đoán cực đại, vẽ cả tương lai
+    maxLeadMs: 9999,
+    multiBulletDelayMs: 1,                   // Delay giữa viên cực thấp
     weaponProfiles: {
-      default: { projectileSpeed: 99999999, multiBulletCount: 12, burstCompFactor: 1.6 },
-      MP40:    { projectileSpeed: 99999999, multiBulletCount: 15, burstCompFactor: 1.7 },
-      M1014:   { projectileSpeed: 99999999, multiBulletCount: 10, burstCompFactor: 1.8 },
-      Vector:  { projectileSpeed: 99999999, multiBulletCount: 15, burstCompFactor: 1.65 }
+      default: { projectileSpeed: 9999999999, multiBulletCount: 100, burstCompFactor: 99999999 },
+      MP40:    { projectileSpeed: 9999999999, multiBulletCount: 150, burstCompFactor: 99999999 },
+      M1014:   { projectileSpeed: 9999999999, multiBulletCount: 100, burstCompFactor: 99999999 },
+      Vector:  { projectileSpeed: 9999999999, multiBulletCount: 150, burstCompFactor: 99999999 }
     }
   };
 
@@ -60,7 +60,6 @@
     }
   }
 
-  // Linear interpolation for smoothing
   function lerp(a, b, t) {
     return a + (b - a) * t;
   }
@@ -68,7 +67,6 @@
     return { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
   }
 
-  // Clamp move crosshair step để tránh overshoot quá lớn
   function clampAimMove(current, target, maxStepPx = CONFIG.clampStepPx) {
     const dx = target.x - current.x;
     const dy = target.y - current.y;
@@ -78,7 +76,6 @@
     return { x: current.x + dx * ratio, y: current.y + dy * ratio };
   }
 
-  // Dự đoán vị trí tuyến tính + head turn
   function predictPosition(enemy, msAhead = 0) {
     if (!enemy) return null;
     if (typeof game !== 'undefined' && typeof game.predict === 'function') {
@@ -89,7 +86,6 @@
     return { x: head.x + vel.x * (msAhead / 1000), y: head.y + vel.y * (msAhead / 1000), z: (head.z || 0) + (vel.z || 0) * (msAhead / 1000) };
   }
 
-  // Multi-bullet prediction và compensation chính xác từng viên
   function applyWeaponCompensation(enemy) {
     const head = getHeadPos(enemy);
     if (!head) return null;
@@ -97,7 +93,7 @@
     const wname = (player.weapon && player.weapon.name) ? player.weapon.name : 'default';
     const prof = CONFIG.weaponProfiles[wname] || CONFIG.weaponProfiles.default;
 
-    if (prof.projectileSpeed && prof.projectileSpeed < 1e9) {
+    if (prof.projectileSpeed && prof.projectileSpeed < 1e10) {
       const dist = distanceBetween(player, head);
       const travelSec = dist / prof.projectileSpeed;
       let leadMs = travelSec * 1000 * CONFIG.overtrackLeadFactor;
@@ -111,7 +107,6 @@
         const msOffset = leadMs + i * CONFIG.multiBulletDelayMs;
         positions.push(predictPosition(enemy, msOffset));
       }
-      // Trung bình vị trí từng viên
       const avgPos = positions.reduce((acc, p) => ({
         x: acc.x + p.x,
         y: acc.y + p.y,
@@ -127,7 +122,6 @@
     return predictPosition(enemy, CONFIG.maxLeadMs);
   }
 
-  // Auto-calibrate offset vuốt lệch cực nhanh
   function autoCalibrateAim(currentPos, targetPos) {
     const errorX = targetPos.x - currentPos.x;
     const errorY = targetPos.y - currentPos.y;
@@ -143,14 +137,12 @@
     return Math.sqrt(dx * dx + dy * dy) <= thresholdPx;
   }
 
-  // Vuốt mượt với smoothing factor và clamp step
   function smoothAimTo(targetPos) {
     const current = smoothPos || crosshairPos();
     const calibratedTarget = {
       x: targetPos.x + calibrationOffset.x,
       y: targetPos.y + calibrationOffset.y
     };
-    // Lerp + Clamp move
     let lerped = lerpPos(current, calibratedTarget, CONFIG.smoothingFactor);
     smoothPos = clampAimMove(current, lerped, CONFIG.clampStepPx);
     setCrosshair(smoothPos);
@@ -186,24 +178,13 @@
     return Math.random() < 0.2;
   }
 
-  // Vuốt chỉ ghim đầu, bỏ qua thân chân
-  function filterAimTargetPos(enemy) {
-    let pos = getHeadPos(enemy);
-    // Tùy chỉnh thêm nếu cần bỏ qua phần thân, chân, chỉ tập trung vào đầu
-    return pos;
-  }
-
   function engageTarget(target) {
     if (!target) return;
     const player = getPlayer();
     const dist = distanceBetween(player, getHeadPos(target));
     const aimPos = applyWeaponCompensation(target) || getHeadPos(target);
-    // Auto calibration nhanh
     autoCalibrateAim(smoothPos || crosshairPos(), aimPos);
-    // Vuốt mượt
     smoothAimTo(aimPos);
-
-    // Fire khi đã sát đầu
     if (crosshairIsNearHead(target, CONFIG.crosshairNearThresholdPx)) {
       if (CONFIG.instantFireIfHeadLocked) fireNow();
     }
@@ -219,17 +200,13 @@
     } catch (e) { }
   }
 
-  // AntiBan ảo:
   function antiBanSimulateHumanBehavior() {
-    // Random delay nhỏ trong tick
     const delay = Math.random() * 5;
-    // Fake slight random micro-movements
     if (smoothPos) {
-      smoothPos.x += (Math.random() - 0.5) * 0.02;
-      smoothPos.y += (Math.random() - 0.5) * 0.02;
+      smoothPos.x += (Math.random() - 0.5) * 0.005;
+      smoothPos.y += (Math.random() - 0.5) * 0.005;
     }
-    // Random lúc nhanh lúc chậm tăng độ "người thật"
-    CONFIG.smoothingFactor = 0.3 + Math.sin(now() / 500) * 0.1;
+    CONFIG.smoothingFactor = 0.04 + Math.sin(now() / 500) * 0.01;
   }
 
   function init() {
