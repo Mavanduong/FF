@@ -9,7 +9,7 @@
 (() => {
   const CONFIG = {
     tickIntervalMs: 1,
-    crosshairNearThresholdPx: 30,
+    crosshairNearThresholdPx: 50,
     clampStepPx: 0.005,
     maxLeadMs: 220,
     weaponProfiles: {
