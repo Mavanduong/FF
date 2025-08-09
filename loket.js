@@ -22,11 +22,11 @@
       Vector:  { projectileSpeed: 99999999, multiBulletCount: 12, burstCompFactor: 1.6 }
     },
     instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 0.4,   // cực kỳ nhỏ, chỉ bắn khi cực sát đầu
-    tickIntervalMs: 1,             // tick 1ms phản hồi max tốc độ
-    clampStepPx: 0.9,             // di chuyển tâm cực nhỏ, tránh overshoot
+    crosshairNearThresholdPx: 0.8,   // cực kỳ nhỏ, chỉ bắn khi cực sát đầu
+    tickIntervalMs: 0,01,             // tick 1ms phản hồi max tốc độ
+    clampStepPx: 1,             // di chuyển tâm cực nhỏ, tránh overshoot
     maxLeadMs: 150,
-    calibCorrectionFactor: 0.15   // hệ số bù calibration offset mỗi tick
+    calibCorrectionFactor: 0.2   // hệ số bù calibration offset mỗi tick
   };
 
   let STATE = { lastShotAt: 0, hits: 0, misses: 0 };
