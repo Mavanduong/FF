@@ -10,7 +10,7 @@
   const CONFIG = {
     tickIntervalMs: 1,
     crosshairNearThresholdPx: 30,
-    clampStepPx: 0.18,
+    clampStepPx: 0.005,
     maxLeadMs: 220,
     weaponProfiles: {
       default: { projectileSpeed: 99999999, multiBulletCount: 10, burstCompFactor: 1.5 },
