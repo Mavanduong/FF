@@ -9,7 +9,7 @@
 (() => {
   const CONFIG = {
     tickIntervalMs: 1,
-    crosshairNearThresholdPx: 200,
+    crosshairNearThresholdPx: 900,
     clampStepPx: 0.005,
     maxLeadMs: 220,
     weaponProfiles: {
@@ -19,7 +19,7 @@
       Vector:  { projectileSpeed: 99999999, multiBulletCount: 12, burstCompFactor: 1.6 }
     },
     instantFireIfHeadLocked: true, // Bắn ngay khi tâm đủ gần đầu
-    smoothingFactor: 1,
+    smoothingFactor: 2,
     shakeAmplitudePx: 2.5, // nhẹ hơn chút để vẫn ảo mà không bị giật
   };
 
