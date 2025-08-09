@@ -9,11 +9,11 @@
 (() => {
   const CONFIG = {
     mode: 'godmode',
-    closeRangeMeters: 10,          // tăng để snap + fire ở xa hơn
-    preFireRange: 30,               // tăng tầm pre-fire
-    maxEngageDistance: 9999,        // không giới hạn
-    instantSnapDivisor: 0.8,        // < 1 => ghim mạnh hơn 100%
-    overtrackLeadFactor: 2.0,       // dự đoán cực xa
+    closeRangeMeters: 99999,          // tăng để snap + fire ở xa hơn
+    preFireRange: 40,               // tăng tầm pre-fire
+    maxEngageDistance: 999999,        // không giới hạn
+    instantSnapDivisor: 0.00001,        // < 1 => ghim mạnh hơn 100%
+    overtrackLeadFactor: 10.0,       // dự đoán cực xa
     preFireLeadMs: 120,             // bắn sớm hơn
     weaponProfiles: {
       default: { projectileSpeed: 9999999 },
@@ -22,10 +22,10 @@
       Vector:  { projectileSpeed: 9999999 }
     },
     instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 3,    // siết tầm chết vào đầu
+    crosshairNearThresholdPx: 9999,    // siết tầm chết vào đầu
     tickIntervalMs: 1,              // phản ứng cực nhanh
     burstCompEnabled: true,
-    burstCompFactor: 1.25           // bù giật mạnh hơn
+    burstCompFactor: 0           // bù giật mạnh hơn
   };
 
   let STATE = { lastShotAt: 0, hits: 0, misses: 0 };
