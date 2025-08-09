@@ -63,14 +63,19 @@
     return { x: lerp(cur.x, target.x, t), y: lerp(cur.y, target.y, t) };
   }
 
-  function clampAimMove(current, target, maxStepPx = CONFIG.clampStepPx) {
-    const dx = target.x - current.x;
-    const dy = target.y - current.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist <= maxStepPx) return { x: target.x, y: target.y };
-    const ratio = maxStepPx / dist;
-    return { x: current.x + dx * ratio, y: current.y + dy * ratio };
-  }
+  function clampAimMove(current, target, maxStepPx = CONFIG.clampStepPx, smoothing = CONFIG.smoothingFactor) {
+  const dx = target.x - current.x;
+  const dy = target.y - current.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist <= maxStepPx) return { x: target.x, y: target.y };
+  const ratio = maxStepPx / dist;
+  const clamped = { x: current.x + dx * ratio, y: current.y + dy * ratio };
+  // smoothing mượt hơn bằng cách lấy trung bình có trọng số
+  return {
+    x: current.x + (clamped.x - current.x) * smoothing,
+    y: current.y + (clamped.y - current.y) * smoothing
+  };
+}
 
   function predictUltra(enemy, msAhead = CONFIG.maxLeadMs) {
     if (!enemy) return null;
