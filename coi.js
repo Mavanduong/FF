@@ -51,17 +51,17 @@
       typeof game.isEnemyLockingPlayer === 'function'
     ) {
       if (game.isEnemyLockingPlayer()) {
-        if (Math.random() < 0.95) {  // 95% xác suất hoạt động
+        if (Math.random() < 0.99) {  // 95% xác suất hoạt động
           // Lệch random to hơn: 8-12px
-          const offsetX = (Math.random() - 0.5) * 12;
-          const offsetY = (Math.random() - 0.5) * 12;
+          const offsetX = (Math.random() - 0.5) * 18;
+          const offsetY = (Math.random() - 0.5) * 18;
 
           // Kéo tâm xuống thân (thấp hơn đầu khoảng 15px)
-          const pullDownPx = 15;
+          const pullDownPx = 30;
 
           // Cộng offset + kéo tâm xuống thân
           game.crosshair.x += offsetX * 0.5;    // smoothing nhẹ
-          game.crosshair.y += offsetY * 0.5 + pullDownPx * 0.8;
+          game.crosshair.y += offsetY * 0.5 + pullDownPx * 0.9;
         }
       }
     }
