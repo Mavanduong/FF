@@ -1,93 +1,88 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v14.4c-UltraGodMode2-Extreme
-// @version      14.4c-UltraGodMode2-Extreme
-// @description  FULL POWER++: instant snap 0 delay, clamp 0.1px, tick 0.5ms, auto-calibrate 100%, multi-bullet precision, burst comp 2.5x, AntiBan cực đỉnh
+// @name         AutoHeadlockProMax vUltraMax-1e12
+// @version      1.0
+// @description  Aim mạnh 1000000000000%, auto calibration, multi-bullet cực chuẩn, smooth snap cực mượt, AntiBan tối ưu
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
 
 (() => {
+  'use strict';
+
   const CONFIG = {
-    mode: 'ultragodmode2-extreme',
+    mode: 'ultramax',
     closeRangeMeters: 99999,
-    preFireRange: 120,
+    preFireRange: 100,
     maxEngageDistance: 999999,
-    instantSnapDivisor: 0.0000001,  // Gần như instant snap tuyệt đối
-    overtrackLeadFactor: 35.0,      // Dự đoán cực xa, cực chuẩn
-    preFireLeadMs: 250,
+    instantSnapDivisor: 0.000000000001, // gần như instant snap tức thì
+    overtrackLeadFactor: 20.0, // dự đoán cực xa, chính xác nhất
+    preFireLeadMs: 200,
     weaponProfiles: {
-      default: { projectileSpeed: 999999999, multiBulletCount: 25, burstCompFactor: 2.5 },
-      MP40:    { projectileSpeed: 999999999, multiBulletCount: 30, burstCompFactor: 2.7 },
-      M1014:   { projectileSpeed: 999999999, multiBulletCount: 20, burstCompFactor: 2.8 },
-      Vector:  { projectileSpeed: 999999999, multiBulletCount: 30, burstCompFactor: 2.6 }
+      default: { projectileSpeed: 1e10, multiBulletCount: 15, burstCompFactor: 2.0 },
+      MP40:    { projectileSpeed: 1e10, multiBulletCount: 18, burstCompFactor: 2.2 },
+      M1014:   { projectileSpeed: 1e10, multiBulletCount: 12, burstCompFactor: 2.4 },
+      Vector:  { projectileSpeed: 1e10, multiBulletCount: 18, burstCompFactor: 2.1 }
     },
     instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 0.25,   // Cực nhỏ sát đầu
-    tickIntervalMs: 0.5,               // tick 0.5ms (môi trường cho phép)
-    clampStepPx: 0.1,                 // clamp cực nhỏ để mượt tuyệt đối
-    maxLeadMs: 300,
-    calibCorrectionFactor: 1.0,       // Bù calibration cực mạnh 100%
+    crosshairNearThresholdPx: 0.5, // cực sát đầu
+    tickIntervalMs: 1,
     burstCompEnabled: true,
     antiBan: true,
-    randomDelayMsMax: 3,              // Fake delay ngẫu nhiên 0-3ms tránh detection
-    logBlock: true,
+    smoothingFactor: 0.15, // cực mượt vuốt
+    calibCorrectionFactor: 0.3, // bù calibration nhanh hơn
   };
 
-  // Ẩn console log nếu bật logBlock
-  if(CONFIG.logBlock){
-    console.log = () => {};
-    console.warn = () => {};
-    console.error = () => {};
-  }
+  let STATE = {
+    lastShotAt: 0,
+    calibrationOffset: { x: 0, y: 0 },
+  };
 
-  let STATE = { lastShotAt: 0, hits: 0, misses: 0 };
-  let calibrationOffset = { x: 0, y: 0 };
+  // Utility functions
+  function now() { return performance.now(); }
 
-  function now() { return Date.now(); }
-  function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-  function getPlayer() { return window.player || { x:0, y:0, z:0, hp:100, weapon:{name:'default'} }; }
+  function getPlayer() { return window.player || { x: 0, y: 0, z: 0, hp: 100, weapon: { name: 'default' } }; }
   function getEnemies() { return (window.game && game.enemies) ? game.enemies : []; }
   function distanceBetween(a, b) {
-    const dx = (a.x||0) - (b.x||0), dy = (a.y||0) - (b.y||0), dz = (a.z||0) - (b.z||0);
-    return Math.sqrt(dx*dx + dy*dy + dz*dz);
+    const dx = (a.x || 0) - (b.x || 0),
+      dy = (a.y || 0) - (b.y || 0),
+      dz = (a.z || 0) - (b.z || 0);
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
   function getHeadPos(enemy) {
-    if(!enemy) return null;
-    if(typeof enemy.getBone === 'function') return enemy.getBone('head');
+    if (!enemy) return null;
+    if (typeof enemy.getBone === 'function') return enemy.getBone('head');
     return enemy.head || enemy.position;
   }
   function crosshairPos() {
-    return (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x:0, y:0 };
+    return (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 };
   }
   function setCrosshair(pos) {
-    if(window.game && game.crosshair){
+    if (window.game && game.crosshair) {
       game.crosshair.x = pos.x;
       game.crosshair.y = pos.y;
     }
   }
   function fireNow() {
-    if(window.game && typeof game.fire === 'function'){
+    if (window.game && typeof game.fire === 'function') {
       game.fire();
       STATE.lastShotAt = now();
     }
   }
 
-  // Clamp di chuyển cực nhỏ, mượt tránh overshoot
-  function clampAimMove(current, target, maxStepPx = CONFIG.clampStepPx) {
-    const dx = target.x - current.x;
-    const dy = target.y - current.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if(dist <= maxStepPx) return { x: target.x, y: target.y };
-    const ratio = maxStepPx / dist;
-    return { x: current.x + dx * ratio, y: current.y + dy * ratio };
+  // Clamp mượt, easing vuốt
+  function clampAimMove(current, target) {
+    const dx = target.x - current.x,
+      dy = target.y - current.y;
+    return {
+      x: current.x + dx * CONFIG.smoothingFactor,
+      y: current.y + dy * CONFIG.smoothingFactor,
+    };
   }
 
-  // Dự đoán head turn cực chuẩn
-  function predictHeadTurn(enemy, msAhead = CONFIG.maxLeadMs) {
+  // Dự đoán head-turn chính xác
+  function predictHeadTurn(enemy, msAhead = 150) {
     const head = getHeadPos(enemy);
-    if(!head) return null;
+    if (!head) return null;
 
     const yaw = enemy.rotation?.yaw || 0;
     const pitch = enemy.rotation?.pitch || 0;
@@ -104,135 +99,154 @@
     const futureYaw = yaw + yawSpeed * (msAhead / 1000);
     const futurePitch = pitch + pitchSpeed * (msAhead / 1000);
 
-    const offsetRadius = 0.22;
+    const offsetRadius = 0.2;
     const offsetX = Math.cos(futureYaw) * offsetRadius;
     const offsetY = Math.sin(futureYaw) * offsetRadius;
     const offsetZ = Math.sin(futurePitch) * offsetRadius;
 
-    return { x: head.x + offsetX, y: head.y + offsetY, z: (head.z||0) + offsetZ };
+    return { x: head.x + offsetX, y: head.y + offsetY, z: (head.z || 0) + offsetZ };
   }
 
-  // Dự đoán tuyến tính + head turn
-  function predictPosition(enemy, msAhead=0) {
-    if(!enemy) return null;
-    if(typeof game !== 'undefined' && typeof game.predict === 'function'){
-      try { return game.predict(enemy, getHeadPos(enemy), msAhead/1000); } catch(e) {}
+  // Dự đoán linear + head turn kết hợp
+  function predictPosition(enemy, msAhead = 0) {
+    if (!enemy) return null;
+    if (typeof game !== 'undefined' && typeof game.predict === 'function') {
+      try {
+        return game.predict(enemy, getHeadPos(enemy), msAhead / 1000);
+      } catch (e) {}
     }
     const head = getHeadPos(enemy);
-    const vel = enemy.velocity || { x:0,y:0,z:0 };
-    return { x: head.x + vel.x*(msAhead/1000), y: head.y + vel.y*(msAhead/1000), z: (head.z||0) + (vel.z||0)*(msAhead/1000) };
-  }
-
-  function predictUltra(enemy, msAhead = CONFIG.maxLeadMs) {
-    const headTurnPos = predictHeadTurn(enemy, msAhead);
-    const linearPos = predictPosition(enemy, msAhead);
-    if(!headTurnPos) return linearPos;
-    if(!linearPos) return headTurnPos;
+    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
     return {
-      x: headTurnPos.x * 0.8 + linearPos.x * 0.2,
-      y: headTurnPos.y * 0.8 + linearPos.y * 0.2,
-      z: headTurnPos.z * 0.8 + linearPos.z * 0.2
+      x: head.x + vel.x * (msAhead / 1000),
+      y: head.y + vel.y * (msAhead / 1000),
+      z: (head.z || 0) + (vel.z || 0) * (msAhead / 1000),
     };
   }
 
-  // Auto-calibrate offset 100%
+  function predictUltra(enemy, msAhead = 150) {
+    const headTurnPos = predictHeadTurn(enemy, msAhead);
+    const linearPos = predictPosition(enemy, msAhead);
+    if (!headTurnPos) return linearPos;
+    if (!linearPos) return headTurnPos;
+    return {
+      x: headTurnPos.x * 0.8 + linearPos.x * 0.2,
+      y: headTurnPos.y * 0.8 + linearPos.y * 0.2,
+      z: headTurnPos.z * 0.8 + linearPos.z * 0.2,
+    };
+  }
+
+  // Auto calibration bù vuốt lệch
   function autoCalibrateAim(currentPos, targetPos) {
     const errorX = targetPos.x - currentPos.x;
     const errorY = targetPos.y - currentPos.y;
-    calibrationOffset.x += errorX * CONFIG.calibCorrectionFactor;
-    calibrationOffset.y += errorY * CONFIG.calibCorrectionFactor;
+    STATE.calibrationOffset.x += errorX * CONFIG.calibCorrectionFactor;
+    STATE.calibrationOffset.y += errorY * CONFIG.calibCorrectionFactor;
   }
 
-  // Weapon compensation + bù calibration
+  // Áp dụng weapon compensation + calibration
   function applyWeaponCompensation(enemy) {
     const head = getHeadPos(enemy);
-    if(!head) return null;
+    if (!head) return null;
     const player = getPlayer();
     const wname = (player.weapon && player.weapon.name) ? player.weapon.name : 'default';
     const prof = CONFIG.weaponProfiles[wname] || CONFIG.weaponProfiles.default;
 
-    if(prof.projectileSpeed && prof.projectileSpeed < 1e10){
-      const dist = distanceBetween(player, head);
-      const travelSec = dist / prof.projectileSpeed;
-      let leadMs = travelSec * 1000 * CONFIG.overtrackLeadFactor;
-      if(leadMs > CONFIG.maxLeadMs) leadMs = CONFIG.maxLeadMs;
+    const dist = distanceBetween(player, head);
+    const travelSec = dist / prof.projectileSpeed;
+    let leadMs = travelSec * 1000 * CONFIG.overtrackLeadFactor;
+    if (leadMs > 150) leadMs = 150;
 
-      const bullets = prof.multiBulletCount || 1;
-      if(bullets <= 1) return predictUltra(enemy, leadMs);
+    const bullets = prof.multiBulletCount || 1;
+    if (bullets <= 1) return predictUltra(enemy, leadMs);
 
-      const positions = [];
-      for(let i=0; i<bullets; i++){
-        const msOffset = leadMs + i * 3;
-        const basePos = predictUltra(enemy, msOffset);
-        positions.push({
-          x: basePos.x + calibrationOffset.x,
-          y: basePos.y + calibrationOffset.y,
-          z: basePos.z
-        });
-      }
-      const avgPos = positions.reduce((acc,p) => ({
+    const positions = [];
+    for (let i = 0; i < bullets; i++) {
+      const msOffset = leadMs + i * 7;
+      let basePos = predictUltra(enemy, msOffset);
+      // bù calibration offset từng viên
+      positions.push({
+        x: basePos.x + STATE.calibrationOffset.x,
+        y: basePos.y + STATE.calibrationOffset.y,
+        z: basePos.z,
+      });
+    }
+
+    const avgPos = positions.reduce(
+      (acc, p) => ({
         x: acc.x + p.x,
         y: acc.y + p.y,
-        z: acc.z + p.z
-      }), {x:0,y:0,z:0});
-      return {
-        x: avgPos.x / bullets,
-        y: avgPos.y / bullets,
-        z: avgPos.z / bullets
-      };
-    }
-    return predictUltra(enemy, CONFIG.maxLeadMs);
+        z: acc.z + p.z,
+      }),
+      { x: 0, y: 0, z: 0 }
+    );
+
+    return {
+      x: avgPos.x / bullets,
+      y: avgPos.y / bullets,
+      z: avgPos.z / bullets,
+    };
   }
 
-  function crosshairIsNearHead(enemy, thresholdPx=CONFIG.crosshairNearThresholdPx){
+  // Kiểm tra crosshair đã gần đầu chưa
+  function crosshairIsNearHead(enemy, thresholdPx = CONFIG.crosshairNearThresholdPx) {
     const head = getHeadPos(enemy);
     const ch = crosshairPos();
-    if(!head) return false;
-    const dx = ch.x - head.x, dy = ch.y - head.y;
-    return Math.sqrt(dx*dx + dy*dy) <= thresholdPx;
+    if (!head) return false;
+    const dx = ch.x - head.x,
+      dy = ch.y - head.y;
+    return Math.sqrt(dx * dx + dy * dy) <= thresholdPx;
   }
 
-  function instantAimAt(pos){
-    if(!pos) return;
+  // Aim mượt mà clamp easing
+  function instantAimAt(pos) {
+    if (!pos) return;
     const current = crosshairPos();
-    const smoothPos = clampAimMove(current, pos, CONFIG.clampStepPx);
+    const smoothPos = clampAimMove(current, pos);
     setCrosshair(smoothPos);
   }
 
-  function scoreTarget(enemy){
+  // Đánh giá mục tiêu ưu tiên
+  function scoreTarget(enemy) {
     const player = getPlayer();
     const head = getHeadPos(enemy);
-    if(!head) return { score: -Infinity, dist: Infinity };
+    if (!head) return { score: -Infinity, dist: Infinity };
     const dist = distanceBetween(player, head);
-    let score = 20000 - dist * 0.9;
-    if(enemy.isAimingAtYou) score += 30000;
-    if(enemy.health && enemy.health < 50) score += 1500;
-    if(!enemy.isVisible) score -= 8000;
+    let score = 1e7 - dist * 2.0;
+    if (enemy.isAimingAtYou) score += 1e7;
+    if (enemy.health && enemy.health < 30) score += 10000;
+    if (!enemy.isVisible) score -= 5000;
     return { score, dist };
   }
 
-  function chooseTarget(enemies){
-    let best = null, bestScore = -Infinity;
-    for(const e of enemies){
+  function chooseTarget(enemies) {
+    let best = null,
+      bestScore = -Infinity;
+    for (const e of enemies) {
       const s = scoreTarget(e);
-      if(s.score > bestScore){ bestScore = s.score; best = e; }
+      if (s.score > bestScore) {
+        bestScore = s.score;
+        best = e;
+      }
     }
     return best;
   }
 
-  function willPeekSoon(enemy){
-    if(!enemy) return false;
-    if(enemy.isAtCoverEdge || enemy.peekIntent) return true;
-    const vel = enemy.velocity || { x:0,y:0,z:0 };
-    const speed = Math.sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z);
-    if(speed < 0.1 && (enemy.priorSpeed && enemy.priorSpeed > 0.6)) return true;
-    return Math.random() < 0.25;
+  // Dự đoán đối thủ sẽ peek hoặc di chuyển
+  function willPeekSoon(enemy) {
+    if (!enemy) return false;
+    if (enemy.isAtCoverEdge || enemy.peekIntent) return true;
+    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
+    const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
+    if (speed < 0.15 && enemy.priorSpeed > 0.5) return true;
+    return Math.random() < 0.05;
   }
 
-  async function engageTarget(target){
-    if(!target) return;
+  // Tham gia tấn công mục tiêu
+  function engageTarget(target) {
+    if (!target) return;
     const head = getHeadPos(target);
-    if(!head) return;
+    if (!head) return;
     const player = getPlayer();
     const dist = distanceBetween(player, head);
 
@@ -240,13 +254,13 @@
 
     autoCalibrateAim(crosshairPos(), aimPos);
 
-    if(dist <= CONFIG.closeRangeMeters){
+    if (dist <= CONFIG.closeRangeMeters) {
       instantAimAt(aimPos);
-      if(CONFIG.instantFireIfHeadLocked) fireNow();
+      if (CONFIG.instantFireIfHeadLocked) fireNow();
       return;
     }
 
-    if(dist <= CONFIG.preFireRange && willPeekSoon(target)){
+    if (dist <= CONFIG.preFireRange && willPeekSoon(target)) {
       const prePos = predictPosition(target, CONFIG.preFireLeadMs) || aimPos;
       instantAimAt(prePos);
       fireNow();
@@ -255,37 +269,51 @@
 
     instantAimAt(aimPos);
 
-    if(CONFIG.burstCompEnabled && typeof game !== 'undefined' && typeof game.autoAdjustSpray === 'function'){
-      game.autoAdjustSpray(aimPos, CONFIG.weaponProfiles[getPlayer().weapon.name]?.burstCompFactor || 1);
+    if (
+      CONFIG.burstCompEnabled &&
+      typeof game !== 'undefined' &&
+      typeof game.autoAdjustSpray === 'function'
+    ) {
+      game.autoAdjustSpray(aimPos, CONFIG.weaponProfiles[getPlayer().weapon.name]?.burstCompFactor || 1.0);
     }
 
-    if(crosshairIsNearHead(target, CONFIG.crosshairNearThresholdPx)) fireNow();
+    if (crosshairIsNearHead(target, CONFIG.crosshairNearThresholdPx)) fireNow();
+  }
 
-    // Nếu bật AntiBan, random delay rất nhỏ để tránh detection (fake human)
-    if(CONFIG.antiBan && CONFIG.randomDelayMsMax > 0){
-      await sleep(Math.random() * CONFIG.randomDelayMsMax);
+  // AntiBan cực mạnh (ẩn dấu, fake hành vi)
+  function antiBanInit() {
+    if (!CONFIG.antiBan) return;
+
+    // Disable console logs
+    console.log = console.warn = console.error = () => {};
+
+    // Freeze console to prevent tampering
+    Object.freeze(console);
+
+    // Fake user agent
+    Object.defineProperty(navigator, 'userAgent', {
+      get: () => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36',
+      configurable: false,
+    });
+
+    // Fake deviceId
+    if (window.deviceId === undefined) {
+      window.deviceId = Math.random().toString(36).substring(2, 15);
+      Object.freeze(window.deviceId);
+    }
+
+    // Fake IP & ping delay (random biến thiên nhẹ)
+    window.fakePing = () => 50 + Math.random() * 30;
+
+    // Hook fire function để random delay very tiny, simulate human micro delay
+    if (window.game && typeof game.fire === 'function') {
+      const originalFire = game.fire.bind(game);
+      game.fire = () => {
+        setTimeout(() => originalFire(), Math.random() * 7);
+      };
     }
   }
 
-  async function tick(){
-    try{
-      const enemies = getEnemies();
-      if(!enemies || enemies.length === 0) return;
-      const target = chooseTarget(enemies);
-      if(!target) return;
-      await engageTarget(target);
-    }catch(e){}
-  }
-
-  function init(){
-    try{
-      if(window.game && typeof game.on === 'function'){
-        try{ game.on('playerDamaged', ()=>{ STATE.lastShotAt = now(); }); }catch(e){}
-      }
-    }catch(e){}
-    setInterval(tick, CONFIG.tickIntervalMs);
-    console.log('[AutoHeadlockProMax v14.4c] UltraGodMode2 Extreme loaded.');
-  }
-
-  init();
-})();
+  // Main loop tick
+  function tick() {
+   
