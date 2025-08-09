@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         FixRecoil v3.5 UltraPro GigaStealth
-// @version      3.5
-// @description  Chống giật tối thượng: mượt, ổn định đa địa hình, hành vi thông minh, tăng FPS và phản hồi cực nhanh trong game FPS
+// @name         FixRecoil v3.5 UltraPro GigaStealth + AntiLock Head Pull
+// @version      3.5.1
+// @description  Chống giật tối thượng + Tự động né đòn khi bị ghim đầu, tăng FPS, phản hồi cực nhanh trong game FPS
 // ==/UserScript==
 
 (function () {
@@ -46,11 +46,26 @@
       }
     }
 
+    // --- Phần bổ sung: Anti-lock khi bị ghim đầu (giả lập) ---
+    // Bạn cần thay game.isEnemyLockingPlayer bằng API hoặc logic detect thực tế game bạn
+    if (typeof game !== 'undefined' && typeof game.crosshair !== 'undefined' && typeof game.isEnemyLockingPlayer === 'function') {
+      if (game.isEnemyLockingPlayer()) {
+        // 90% khả năng kéo lệch tâm crosshair địch để né đòn
+        if (Math.random() < 0.9) {
+          // Lệch tâm crosshair ngang hoặc dọc ngẫu nhiên 3-6px
+          const offsetX = (Math.random() - 0.5) * 6;
+          const offsetY = (Math.random() - 0.5) * 6;
+          game.crosshair.x += offsetX;
+          game.crosshair.y += offsetY;
+        }
+      }
+    }
+
     body = JSON.stringify(data);
     $done({ body });
 
   } catch (err) {
-  
+    // Nếu lỗi thì vẫn trả về bình thường
     $done({});
   }
 })();
