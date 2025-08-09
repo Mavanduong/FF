@@ -1,165 +1,228 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v15-GodMode-Silent-AllWeapon
-// @version      15.0
-// @description  Full GodMode: All guns instant hit, silent, head turn prediction, no overshoot, prefire, burst comp.
+// @name         AutoHeadlockProMax v14.4c-HumanBreaker-FullPower-NoAntiBan
+// @version      14.4c
+// @description  FULL POWER: instant head snap + pre-fire + overtrack + weapon compensation + burst handling. AntiBan removed (max performance).
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
 
 (() => {
+  /* ============== CONFIG ============== */
   const CONFIG = {
-    closeRangeMeters: Infinity,
-    preFireRange: 99999999,
-    maxEngageDistance: Infinity,
-    instantSnapDivisor: 0.00001,
-    overtrackLeadFactor: 10.0,
-    preFireLeadMs: 150,
-    projectileSpeed: 999999999, // ALL weapons use instant speed
+    // mode
+    mode: 'fullpower',
+    // distances (meters)
+    closeRangeMeters: 6,      // <= this => instant snap + instant fire
+    preFireRange: 18,
+    maxEngageDistance: 250,
+    // aim & smoothing
+    instantSnapDivisor: 1.0,      // 1 => full snap
+    overtrackLeadFactor: 1.25,    // lead factor for moving targets
+    preFireLeadMs: 60,            // ms to pre-fire before peek
+    // weapons (tweak per-engine)
+    weaponProfiles: {
+      default: { projectileSpeed: 999999 },
+      MP40:    { projectileSpeed: 1400 },
+      M1014:   { projectileSpeed: 1200 },
+      Vector:  { projectileSpeed: 1500 }
+    },
+    // fire thresholds
     instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 9999,
-    tickIntervalMs: 1,
+    crosshairNearThresholdPx: 6,
+    // loop
+    tickIntervalMs: 6,
     burstCompEnabled: true,
-    burstCompFactor: 0,
-    clampStepPx: 35,
-    maxLeadMs: 9999999999
+    burstCompFactor: 1.12
   };
 
-  let STATE = { lastShotAt: 0 };
-
-  const now = () => Date.now();
-  const getPlayer = () => window.player || { x:0,y:0,z:0, hp:100, weapon:{name:'default'} };
-  const getEnemies = () => (window.game && game.enemies) ? game.enemies : [];
-  const dist = (a,b) => Math.hypot((a.x||0)-(b.x||0), (a.y||0)-(b.y||0), (a.z||0)-(b.z||0));
-  const getHead = e => (e?.getBone?.('head')) || e?.head || e?.position || null;
-  const crosshair = () => (window.game?.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x:0, y:0 };
-  const setCrosshair = p => { if(window.game?.crosshair){ game.crosshair.x = p.x; game.crosshair.y = p.y; } };
-  const fireNow = () => { if(window.game?.fire) { game.fire(); STATE.lastShotAt = now(); } };
-
-  const clampAimMove = (cur, tgt, step=CONFIG.clampStepPx) => {
-    const dx = tgt.x - cur.x, dy = tgt.y - cur.y;
-    const d = Math.hypot(dx, dy);
-    if (d <= step) return { x: tgt.x, y: tgt.y };
-    const r = step / d;
-    return { x: cur.x + dx * r, y: cur.y + dy * r };
+  /* ============== STATE ============== */
+  let STATE = {
+    lastShotAt: 0,
+    hits: 0,
+    misses: 0
   };
 
-  const predictPos = (enemy, msAhead=0) => {
+  /* ============== UTILITIES / ADAPTERS ============== */
+  function now(){ return Date.now(); }
+
+  // Replace/adapt these to your game's actual objects/APIs:
+  function getPlayer(){
+    return window.player || { x:0,y:0,z:0, hp:100, weapon:{name:'default'} };
+  }
+
+  function getEnemies(){
+    return (window.game && game.enemies) ? game.enemies : [];
+  }
+
+  function distanceBetween(a,b){
+    const dx=(a.x||0)-(b.x||0), dy=(a.y||0)-(b.y||0), dz=(a.z||0)-(b.z||0);
+    return Math.sqrt(dx*dx + dy*dy + dz*dz);
+  }
+
+  function getHeadPos(enemy){
     if(!enemy) return null;
-    const head = getHead(enemy);
-    const v = enemy.velocity || { x:0,y:0,z:0 };
-    return {
-      x: head.x + v.x*(msAhead/1000),
-      y: head.y + v.y*(msAhead/1000),
-      z: (head.z||0) + (v.z||0)*(msAhead/1000)
-    };
-  };
+    if(typeof enemy.getBone === 'function') return enemy.getBone('head');
+    return enemy.head || enemy.position;
+  }
 
-  const predictHeadTurn = (enemy, msAhead = CONFIG.maxLeadMs) => {
-    const head = getHead(enemy);
-    if (!head) return null;
-    const yaw = enemy.rotation?.yaw || 0;
-    const pitch = enemy.rotation?.pitch || 0;
-    const prevYaw = enemy.prevYaw ?? yaw;
-    const prevPitch = enemy.prevPitch ?? pitch;
-    enemy.prevYaw = yaw;
-    enemy.prevPitch = pitch;
-    const yawSpeed = (yaw - prevYaw) / (CONFIG.tickIntervalMs / 1000);
-    const pitchSpeed = (pitch - prevPitch) / (CONFIG.tickIntervalMs / 1000);
-    const fYaw = yaw + yawSpeed * (msAhead / 1000);
-    const fPitch = pitch + pitchSpeed * (msAhead / 1000);
-    const off = {
-      x: Math.cos(fYaw) * 0.25,
-      y: Math.sin(fYaw) * 0.25,
-      z: Math.sin(fPitch) * 0.25
-    };
-    return { x: head.x + off.x, y: head.y + off.y, z: head.z + off.z };
-  };
+  function crosshairPos(){
+    return (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x:0, y:0 };
+  }
 
-  const applyComp = enemy => {
-    const h = getHead(enemy);
-    if (!h) return null;
+  function setCrosshair(pos){
+    if(window.game && game.crosshair){
+      game.crosshair.x = pos.x;
+      game.crosshair.y = pos.y;
+    }
+  }
+
+  function fireNow(){
+    if(window.game && typeof game.fire === 'function'){
+      game.fire();
+      STATE.lastShotAt = now();
+    }
+  }
+
+  /* ============== PREDICTION & COMPENSATION ============== */
+  function predictPosition(enemy, msAhead=0){
+    if(!enemy) return null;
+    if(typeof game !== 'undefined' && typeof game.predict === 'function'){
+      try{ return game.predict(enemy, getHeadPos(enemy), msAhead/1000); } catch(e){}
+    }
+    const head = getHeadPos(enemy);
+    const vel = enemy.velocity || { x:0,y:0,z:0 };
+    return { x: head.x + vel.x*(msAhead/1000), y: head.y + vel.y*(msAhead/1000), z: (head.z||0) + (vel.z||0)*(msAhead/1000) };
+  }
+
+  function applyWeaponCompensation(enemy){
+    const head = getHeadPos(enemy);
+    if(!head) return null;
     const player = getPlayer();
-    const d = dist(player, h);
-    let leadMs = (d / CONFIG.projectileSpeed) * 1000 * CONFIG.overtrackLeadFactor;
-    if (leadMs > CONFIG.maxLeadMs) leadMs = CONFIG.maxLeadMs;
-    return predictPos(enemy, leadMs) || h;
-  };
+    const wname = (player.weapon && player.weapon.name) ? player.weapon.name : 'default';
+    const prof = CONFIG.weaponProfiles[wname] || CONFIG.weaponProfiles.default;
+    // lead time approximation
+    if(prof.projectileSpeed && prof.projectileSpeed < 1e6){
+      const dist = distanceBetween(player, head);
+      const travelSec = dist / prof.projectileSpeed;
+      const leadMs = travelSec * 1000 * CONFIG.overtrackLeadFactor;
+      return predictPosition(enemy, Math.min(200, leadMs));
+    }
+    // default small lead
+    return predictPosition(enemy, 16 * CONFIG.overtrackLeadFactor) || head;
+  }
 
-  const nearHead = (enemy, thr=CONFIG.crosshairNearThresholdPx) => {
-    const h = getHead(enemy);
-    const ch = crosshair();
-    if(!h) return false;
-    return Math.hypot(ch.x - h.x, ch.y - h.y) <= thr;
-  };
+  function crosshairIsNearHead(enemy, thresholdPx = CONFIG.crosshairNearThresholdPx){
+    const head = getHeadPos(enemy);
+    const ch = crosshairPos();
+    if(!head) return false;
+    const dx = ch.x - head.x, dy = ch.y - head.y;
+    return Math.sqrt(dx*dx + dy*dy) <= thresholdPx;
+  }
 
-  const instantAim = pos => { if(pos) setCrosshair(clampAimMove(crosshair(), pos, CONFIG.clampStepPx)); };
+  function instantAimAt(pos){
+    if(!pos) return;
+    setCrosshair({ x: pos.x, y: pos.y });
+  }
 
-  const scoreTarget = enemy => {
+  /* ============== TARGET SELECTION ============== */
+  function scoreTarget(enemy){
     const player = getPlayer();
-    const h = getHead(enemy);
-    if(!h) return { score: -Infinity, dist: Infinity };
-    let score = 10000 - dist(player, h) * 1.5;
-    if(enemy.isAimingAtYou) score += 9999;
-    if(enemy.health < 50) score += 500;
+    const head = getHeadPos(enemy);
+    if(!head) return { score: -Infinity, dist: Infinity };
+    const dist = distanceBetween(player, head);
+    let score = 0;
+    if(enemy.isAimingAtYou) score += 5000;
+    score -= dist * 2.0;
+    if(enemy.health && enemy.health < 30) score += 300;
     if(!enemy.isVisible) score -= 2000;
-    return { score, dist: dist(player, h) };
-  };
+    return { score, dist };
+  }
 
-  const chooseTarget = enemies => {
+  function chooseTarget(enemies){
     let best = null, bestScore = -Infinity;
-    for (const e of enemies) {
+    for(const e of enemies){
       const s = scoreTarget(e);
-      if (s.score > bestScore) { bestScore = s.score; best = e; }
+      if(s.score > bestScore){ bestScore = s.score; best = e; }
     }
     return best;
-  };
+  }
 
-  const willPeekSoon = e => {
-    if (!e) return false;
-    if (e.isAtCoverEdge || e.peekIntent) return true;
-    const v = e.velocity || { x:0,y:0,z:0 };
-    const sp = Math.hypot(v.x, v.y, v.z);
-    if (sp < 0.15 && e.priorSpeed > 0.5) return true;
-    return Math.random() < 0.15;
-  };
+  /* ============== ENGAGEMENT LOGIC ============== */
+  function willPeekSoon(enemy){
+    if(!enemy) return false;
+    if(enemy.isAtCoverEdge || enemy.peekIntent) return true;
+    const vel = enemy.velocity || { x:0,y:0,z:0 };
+    const speed = Math.sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z);
+    if(speed < 0.15 && (enemy.priorSpeed && enemy.priorSpeed > 0.5)) return true;
+    return Math.random() < 0.08;
+  }
 
-  const engage = t => {
-    if (!t) return;
-    const h = getHead(t);
-    if (!h) return;
+  function engageTarget(target){
+    if(!target) return;
+    const head = getHeadPos(target);
+    if(!head) return;
     const player = getPlayer();
-    const d = dist(player, h);
-    const aimPos = predictHeadTurn(t, CONFIG.maxLeadMs) || applyComp(t) || h;
+    const dist = distanceBetween(player, head);
 
-    if (d <= CONFIG.closeRangeMeters) {
-      instantAim(aimPos);
-      if (CONFIG.instantFireIfHeadLocked) fireNow();
+    // compute aim pos using weapon compensation & overtrack
+    const aimPos = applyWeaponCompensation(target) || head;
+
+    // close-range: instant snap + instant fire
+    if(dist <= CONFIG.closeRangeMeters){
+      instantAimAt(aimPos);
+      if(CONFIG.instantFireIfHeadLocked) fireNow();
       return;
     }
 
-    if (d <= CONFIG.preFireRange && willPeekSoon(t)) {
-      const pre = predictPos(t, CONFIG.preFireLeadMs) || aimPos;
-      instantAim(pre);
+    // pre-fire when peek-likely
+    if(dist <= CONFIG.preFireRange && willPeekSoon(target)){
+      const prePos = predictPosition(target, CONFIG.preFireLeadMs) || aimPos;
+      instantAimAt(prePos);
       fireNow();
       return;
     }
 
-    instantAim(aimPos);
+    // mid/long range: aggressive snap (near-instant)
+    if(CONFIG.instantSnapDivisor <= 1.01){
+      instantAimAt(aimPos);
+    } else {
+      const cur = crosshairPos();
+      const next = { x: cur.x + (aimPos.x - cur.x)/CONFIG.instantSnapDivisor, y: cur.y + (aimPos.y - cur.y)/CONFIG.instantSnapDivisor };
+      setCrosshair(next);
+    }
 
-    if (CONFIG.burstCompEnabled && game?.autoAdjustSpray) {
+    // burst handling if supported by engine
+    if(CONFIG.burstCompEnabled && typeof game !== 'undefined' && typeof game.autoAdjustSpray === 'function'){
       game.autoAdjustSpray(aimPos, CONFIG.burstCompFactor);
     }
 
-    if (nearHead(t)) fireNow();
-  };
+    if(crosshairIsNearHead(target, 8)) fireNow();
+  }
 
-  const tick = () => {
-    try {
+  /* ============== MAIN LOOP ============== */
+  function tick(){
+    try{
       const enemies = getEnemies();
-      if (!enemies.length) return;
-      engage(chooseTarget(enemies));
-    } catch {}
-  };
+      if(!enemies || enemies.length === 0) return;
+      const target = chooseTarget(enemies);
+      if(!target) return;
+      engageTarget(target);
+    }catch(e){}
+  }
 
-  setInterval(tick, CONFIG.tickIntervalMs);
+  /* ============== INIT ============== */
+  function init(){
+    // hook damage events if available
+    try{
+      if(window.game && typeof game.on === 'function'){
+        try{ game.on('playerDamaged', ()=>{ STATE.lastShotAt = now(); }); }catch(e){}
+      }
+    }catch(e){}
+    setInterval(tick, CONFIG.tickIntervalMs);
+    console.log('[AutoHeadlockProMax v14.4c] HumanBreaker FullPower (No AntiBan) loaded.');
+  }
+
+  init();
+
 })();
+
