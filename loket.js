@@ -9,11 +9,11 @@
 (() => {
   const CONFIG = {
     closeRangeMeters: Infinity,
-    preFireRange: 40,
+    preFireRange: 99999999,
     maxEngageDistance: Infinity,
     instantSnapDivisor: 0.00001,
     overtrackLeadFactor: 10.0,
-    preFireLeadMs: 120,
+    preFireLeadMs: 150,
     projectileSpeed: 999999999, // ALL weapons use instant speed
     instantFireIfHeadLocked: true,
     crosshairNearThresholdPx: 9999,
@@ -21,7 +21,7 @@
     burstCompEnabled: true,
     burstCompFactor: 0,
     clampStepPx: 35,
-    maxLeadMs: 80
+    maxLeadMs: 9999999999
   };
 
   let STATE = { lastShotAt: 0 };
