@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AutoHeadlockProMax v14.5-UltraGodX
 // @version      14.5
-// @description  Phiên bản nâng cấp: tick 0.5ms, dự đoán headturn cực chính xác, clamp nhỏ + multi-bullet tối ưu + auto fire cực mạnh
+// @description  UltraGodX siêu mạnh: instant snap, multi-bullet, headturn, tick 0.5ms
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
@@ -12,8 +12,8 @@
     closeRangeMeters: 99999,
     preFireRange: 100,
     maxEngageDistance: 999999,
-    instantSnapDivisor: 0.0000001,   // Gần như instant snap tức thì
-    overtrackLeadFactor: 20.0,       // Dự đoán xa, headturn cực chuẩn
+    instantSnapDivisor: 0.0000001,
+    overtrackLeadFactor: 20.0,
     preFireLeadMs: 200,
     weaponProfiles: {
       default: { projectileSpeed: 99999999, multiBulletCount: 15, burstCompFactor: 1.7 },
@@ -22,17 +22,16 @@
       Vector:  { projectileSpeed: 99999999, multiBulletCount: 20, burstCompFactor: 1.85 }
     },
     instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 0.7,   // Mức cực nhỏ, cực chuẩn mới bắn
-    tickIntervalMs: 0.5,             // Tick 0.5ms phản hồi max tốc độ
+    crosshairNearThresholdPx: 0.7,
+    tickIntervalMs: 0.5,
     burstCompEnabled: true,
-    clampStepPx: 2,                  // Clamp nhỏ hơn, di chuyển tâm cực mượt, tránh overshoot
+    clampStepPx: 2,
     maxLeadMs: 180,
-    priorityHealthThreshold: 60,     // Ưu tiên target hp < 60
-    visibilityPenalty: 7000          // Phạt nặng target ẩn
+    priorityHealthThreshold: 60,
+    visibilityPenalty: 7000
   };
 
   let STATE = { lastShotAt: 0, hits: 0, misses: 0 };
-
   const now = () => Date.now();
   const getPlayer = () => window.player || { x:0, y:0, z:0, hp:100, weapon: { name:'default' } };
   const getEnemies = () => (window.game && game.enemies) ? game.enemies : [];
@@ -72,7 +71,6 @@
     return { x: current.x + dx*ratio, y: current.y + dy*ratio };
   };
 
-  // Dự đoán headturn chính xác nhất với delta rotation và smoothing hơn
   const predictHeadTurn = (enemy, msAhead = CONFIG.maxLeadMs) => {
     const head = getHeadPos(enemy);
     if(!head) return null;
@@ -83,7 +81,6 @@
     enemy.prevYaw = enemy.prevYaw ?? yaw;
     enemy.prevPitch = enemy.prevPitch ?? pitch;
 
-    // Smoothing delta rotation (tránh giật)
     const smoothFactor = 0.75;
     const yawSpeed = (yaw - enemy.prevYaw) * smoothFactor;
     const pitchSpeed = (pitch - enemy.prevPitch) * smoothFactor;
@@ -94,7 +91,7 @@
     const futureYaw = yaw + yawSpeed * (msAhead / 1000);
     const futurePitch = pitch + pitchSpeed * (msAhead / 1000);
 
-    const offsetRadius = 0.18; // nhỏ để sát đầu
+    const offsetRadius = 0.18;
     const offsetX = Math.cos(futureYaw) * offsetRadius;
     const offsetY = Math.sin(futureYaw) * offsetRadius;
     const offsetZ = Math.sin(futurePitch) * offsetRadius;
@@ -124,7 +121,6 @@
     };
   };
 
-  // Multi-bullet chính xác + delay bắn theo số viên
   const applyWeaponCompensation = enemy => {
     const head = getHeadPos(enemy);
     if(!head) return null;
@@ -144,7 +140,6 @@
 
       const positions = [];
       for(let i = 0; i < bullets; i++){
-        // Dự đoán từng viên lệch thời gian 6-8ms
         const msOffset = leadMs + i * 6.8;
         positions.push(predictUltra(enemy, msOffset));
       }
@@ -187,7 +182,7 @@
     if(enemy.isAimingAtYou) score += 25000;
     if(enemy.health && enemy.health < CONFIG.priorityHealthThreshold) score += 3000;
     if(!enemy.isVisible) score -= CONFIG.visibilityPenalty;
-    if(enemy.isReloading) score -= 8000;  // Tránh target đang reload
+    if(enemy.isReloading) score -= 8000;
 
     return { score, dist };
   };
