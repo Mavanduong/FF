@@ -121,26 +121,47 @@
     STATE.bursting = false;
   }
 
-  function aimAtHead(target) {
-    const head = getHead(target);
-    if (!head) return;
+function aimAtHead(target) {
+  const head = getHead(target);
+  if (!head) return;
 
-    const aimPos = { x: head.x, y: head.y + CONFIG.headYOffsetPx };
+  const aimTarget = { x: head.x, y: head.y + CONFIG.headYOffsetPx };
+  const currentCrosshair = (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 };
 
-    // Lock vùng rộng hơn (cho phép lệch một chút)
-    const currentCrosshair = (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : {x:0,y:0};
-    const dist = Math.hypot(aimPos.x - currentCrosshair.x, aimPos.y - currentCrosshair.y);
-
-    if (dist > CONFIG.aimThresholdPx) {
-      setCrosshair(aimPos);
-    }
-
-    if (CONFIG.fireOnLock && dist <= CONFIG.aimThresholdPx && !STATE.bursting) {
-      const count = CONFIG.fullMagCountOverride;
-      if (CONFIG.fullMagDump) dumpMag(count);
-      else fireOnce();
-    }
+  // Giới hạn crosshair không vượt quá đầu (theo trục Y)
+  let targetY = aimTarget.y;
+  if (currentCrosshair.y < aimTarget.y) {
+    // Nếu đang dưới đầu, không cho vượt lên trên đầu
+    targetY = Math.min(currentCrosshair.y + (aimTarget.y - currentCrosshair.y) * (CONFIG.smoothingFactor || 0.3), aimTarget.y);
+  } else {
+    // Nếu đang trên đầu rồi, giữ nguyên hoặc kéo nhẹ về đầu
+    targetY = Math.max(currentCrosshair.y - (currentCrosshair.y - aimTarget.y) * (CONFIG.smoothingFactor || 0.3), aimTarget.y);
   }
+
+  // Tương tự với trục X nếu cần smoothing (hoặc snap luôn)
+  let targetX = aimTarget.x;
+  if (CONFIG.smoothingFactor > 0) {
+    targetX = currentCrosshair.x + (aimTarget.x - currentCrosshair.x) * CONFIG.smoothingFactor;
+  }
+
+  // Đặt lại crosshair với giới hạn
+  const newAim = { x: targetX, y: targetY };
+
+  // Tính khoảng cách giữa crosshair mới và đầu mục tiêu
+  const dist = Math.hypot(newAim.x - aimTarget.x, newAim.y - aimTarget.y);
+
+  // Chỉ set crosshair nếu khác nhiều để tránh giật mạnh
+  if (dist > 0.1) {
+    setCrosshair(newAim);
+  }
+
+  // Nếu đã gần đủ, bắn
+  if (CONFIG.fireOnLock && dist <= CONFIG.aimThresholdPx && !STATE.bursting) {
+    const count = CONFIG.fullMagCountOverride;
+    if (CONFIG.fullMagDump) dumpMag(count);
+    else fireOnce();
+  }
+}
 
   function tick() {
     const enemies = getEnemies();
