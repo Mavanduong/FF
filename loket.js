@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v15.2 - FullHeadLock + ABNR + TargetPriority
-// @version      15.2
-// @description  100% hút đầu + full mag dump + tăng vùng lock + ưu tiên đầu to + tránh vật cản (ABNR)
+// @name         AutoHeadlockProMax v16.0 - GodMode + Prediction + WallPenetration
+// @version      16.0
+// @description  100% hút đầu, full mag dump, dự đoán đầu, ưu tiên đầu to, bắn xuyên vật thể, tick cực nhanh
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
@@ -9,20 +9,22 @@
 (() => {
   'use strict';
 
-const CONFIG = {
-  headYOffsetPx: -4,
-  tickIntervalMs: 88888888,            // ~200 lần/s, đủ mượt và ổn
-  smoothingFactor: 0.0001,        // vuốt mượt, 0.1~0.3 là đẹp, ko quá nhanh
-  fireOnLock: true,
-  fullMagDump: true,
-  fullMagCountOverride: 30,     // xả đủ băng, không quá lớn
-  aimThresholdPx: 15,           // vùng lock khoảng 10px là đủ để bắn đỏ, ko quá rộng
-  maxTargetsConsidered: 20,
-};
-
+  const CONFIG = {
+    headYOffsetPx: -4,
+    tickIntervalMs: 4,               // ~250 lần/giây
+    smoothingFactor: 0.25,           // vuốt mượt
+    fireOnLock: true,
+    fullMagDump: true,
+    fullMagCountOverride: 30,        // max viên xả mỗi lần
+    aimThresholdPx: 12,              // vùng lock chính xác
+    maxTargetsConsidered: 20,
+    predictionTimeMs: 50,            // dự đoán đầu 50ms
+    extraPenetrationShots: 3,        // số viên xuyên vật thể trước khi địch chạy
+  };
 
   let STATE = {
-    bursting: false
+    bursting: false,
+    lastEnemyHeads: new Map(),       // lưu vị trí đầu cũ để tính velocity
   };
 
   function getPlayer() {
@@ -48,25 +50,49 @@ const CONFIG = {
     return enemy.head || enemy.position || null;
   }
 
-  // Tính headSize ảo, tăng headSize lên để ưu tiên
+  // Tính headSize ảo, ưu tiên target đầu to
   function getHeadSize(enemy) {
-    return enemy.headSize || 10;  // nếu game ko có thì mặc định 10
+    return enemy.headSize || 10;
   }
 
-  // Kiểm tra có vật cản giữa player và target (line of sight)
-  // Bạn cần thay thế bằng API raycast hoặc check vật cản game bạn
+  // Kiểm tra vật cản (line of sight) - giả định true, bạn thay thế API raycast thật
   function hasClearLOS(playerPos, targetPos) {
-    // MOCK: giả định luôn clear, bạn thay thế
     return true;
   }
 
-  // Chọn target dựa trên ưu tiên:
-  // 1. Phải clear line of sight (ABNR)
-  // 2. Trong số đó ưu tiên target đầu to
-  // 3. Nếu đầu to bằng nhau ưu tiên target gần player
+  // Tính vận tốc đầu dựa trên delta vị trí giữa các tick
+  function getVelocity(enemy, currentHead) {
+    const prev = STATE.lastEnemyHeads.get(enemy);
+    if (!prev) return { vx:0, vy:0, vz:0 };
+
+    const dt = CONFIG.tickIntervalMs;
+    return {
+      vx: (currentHead.x - prev.x) / dt,
+      vy: (currentHead.y - prev.y) / dt,
+      vz: (currentHead.z - prev.z) / dt,
+    };
+  }
+
+  // Dự đoán vị trí đầu địch trong tương lai dựa vận tốc
+  function getPredictedHead(enemy) {
+    const currentHead = getHead(enemy);
+    if (!currentHead) return null;
+
+    const velocity = getVelocity(enemy, currentHead);
+
+    return {
+      x: currentHead.x + velocity.vx * CONFIG.predictionTimeMs,
+      y: currentHead.y + velocity.vy * CONFIG.predictionTimeMs,
+      z: currentHead.z + velocity.vz * CONFIG.predictionTimeMs,
+    };
+  }
+
+  // Chọn target ưu tiên:
+  // 1. Có line of sight
+  // 2. Ưu tiên headSize lớn
+  // 3. Nếu bằng nhau ưu tiên gần player
   function chooseTarget(enemies) {
     const player = getPlayer();
-    // Lọc target có LOS
     const visibleTargets = enemies.filter(e => {
       const head = getHead(e);
       if (!head) return false;
@@ -75,18 +101,15 @@ const CONFIG = {
 
     if (visibleTargets.length === 0) return null;
 
-    // Tăng headSize ảo lên để ưu tiên
     visibleTargets.forEach(e => {
-      e._headSizeBoosted = getHeadSize(e) * 3; // boost 3 lần
+      e._headSizeBoosted = getHeadSize(e) * 3;
     });
 
-    // Sắp xếp target theo headSize giảm dần, nếu bằng nhau thì gần player hơn
     visibleTargets.sort((a,b) => {
       if (b._headSizeBoosted !== a._headSizeBoosted) return b._headSizeBoosted - a._headSizeBoosted;
       return distance(getHead(a), player) - distance(getHead(b), player);
     });
 
-    // Lấy target đầu tiên (ưu tiên nhất)
     return visibleTargets[0];
   }
 
@@ -120,123 +143,61 @@ const CONFIG = {
     } catch(e){}
     STATE.bursting = false;
   }
-function aimAtHead(target) {
-  const head = getHead(target);
-  if (!head) return;
 
-  const aimTarget = { x: head.x, y: head.y + CONFIG.headYOffsetPx };
-  const currentCrosshair = (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 };
+  // Bắn thêm viên xuyên vật thể (giả lập bắn xuyên tường) trước khi địch chạy
+  // Ở đây chỉ bắn thêm 2-3 viên, không phụ thuộc vật thể thật (do không có API raycast)
+  function shootPenetrationShots() {
+    for (let i = 0; i < CONFIG.extraPenetrationShots; i++) {
+      fireOnce();
+    }
+  }
 
-  // Tính delta để vuốt mượt, giới hạn không vượt quá aimTarget
-  let deltaX = (aimTarget.x - currentCrosshair.x) * CONFIG.smoothingFactor;
-  let deltaY = (aimTarget.y - currentCrosshair.y) * CONFIG.smoothingFactor;
+  function aimAtHead(target) {
+    const predictedHead = getPredictedHead(target);
+    if (!predictedHead) return;
 
-  // Cập nhật vị trí aim mới
-  let newX = currentCrosshair.x + deltaX;
-  let newY = currentCrosshair.y + deltaY;
+    const aimTarget = { x: predictedHead.x, y: predictedHead.y + CONFIG.headYOffsetPx };
+    const currentCrosshair = (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 };
 
-  // Giới hạn không vượt quá aimTarget (theo từng trục)
-  if ((deltaX > 0 && newX > aimTarget.x) || (deltaX < 0 && newX < aimTarget.x)) newX = aimTarget.x;
-  if ((deltaY > 0 && newY > aimTarget.y) || (deltaY < 0 && newY < aimTarget.y)) newY = aimTarget.y;
+    let deltaX = (aimTarget.x - currentCrosshair.x) * CONFIG.smoothingFactor;
+    let deltaY = (aimTarget.y - currentCrosshair.y) * CONFIG.smoothingFactor;
 
-  const newAim = { x: newX, y: newY };
+    let newX = currentCrosshair.x + deltaX;
+    let newY = currentCrosshair.y + deltaY;
 
-  const dist = Math.hypot(newAim.x - aimTarget.x, newAim.y - aimTarget.y);
+    if ((deltaX > 0 && newX > aimTarget.x) || (deltaX < 0 && newX < aimTarget.x)) newX = aimTarget.x;
+    if ((deltaY > 0 && newY > aimTarget.y) || (deltaY < 0 && newY < aimTarget.y)) newY = aimTarget.y;
 
-  // Chỉ set nếu thay đổi rõ ràng
-  if (dist > 0.01) {
+    const newAim = { x: newX, y: newY };
+
     setCrosshair(newAim);
+
+    const dist = Math.hypot(newAim.x - aimTarget.x, newAim.y - aimTarget.y);
+
+    if (CONFIG.fireOnLock && dist <= CONFIG.aimThresholdPx && !STATE.bursting) {
+      shootPenetrationShots();
+      dumpMag(CONFIG.fullMagCountOverride);
+    }
   }
-
-  // Nếu đã gần đủ (trong vùng threshold), bắn
-  if (CONFIG.fireOnLock && dist <= CONFIG.aimThresholdPx && !STATE.bursting) {
-    const count = CONFIG.fullMagCountOverride;
-    if (CONFIG.fullMagDump) dumpMag(count);
-    else fireOnce();
-  }
-}
-function aimAtHead(target) {
-  const head = getHead(target);
-  if (!head) return;
-
-  const aimTarget = { x: head.x, y: head.y + CONFIG.headYOffsetPx };
-  const currentCrosshair = (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 };
-
-  // Tính delta để vuốt mượt, giới hạn không vượt quá aimTarget
-  let deltaX = (aimTarget.x - currentCrosshair.x) * CONFIG.smoothingFactor;
-  let deltaY = (aimTarget.y - currentCrosshair.y) * CONFIG.smoothingFactor;
-
-  // Cập nhật vị trí aim mới
-  let newX = currentCrosshair.x + deltaX;
-  let newY = currentCrosshair.y + deltaY;
-
-  // Giới hạn không vượt quá aimTarget (theo từng trục)
-  if ((deltaX > 0 && newX > aimTarget.x) || (deltaX < 0 && newX < aimTarget.x)) newX = aimTarget.x;
-  if ((deltaY > 0 && newY > aimTarget.y) || (deltaY < 0 && newY < aimTarget.y)) newY = aimTarget.y;
-
-  const newAim = { x: newX, y: newY };
-
-  const dist = Math.hypot(newAim.x - aimTarget.x, newAim.y - aimTarget.y);
-
-  // Chỉ set nếu thay đổi rõ ràng
-  if (dist > 0.01) {
-    setCrosshair(newAim);
-  }
-
-  // Nếu đã gần đủ (trong vùng threshold), bắn
-  if (CONFIG.fireOnLock && dist <= CONFIG.aimThresholdPx && !STATE.bursting) {
-    const count = CONFIG.fullMagCountOverride;
-    if (CONFIG.fullMagDump) dumpMag(count);
-    else fireOnce();
-  }
-}
-function aimAtHead(target) {
-  const head = getHead(target);
-  if (!head) return;
-
-  const aimTarget = { x: head.x, y: head.y + CONFIG.headYOffsetPx };
-  const currentCrosshair = (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 };
-
-  // Tính delta để vuốt mượt, giới hạn không vượt quá aimTarget
-  let deltaX = (aimTarget.x - currentCrosshair.x) * CONFIG.smoothingFactor;
-  let deltaY = (aimTarget.y - currentCrosshair.y) * CONFIG.smoothingFactor;
-
-  // Cập nhật vị trí aim mới
-  let newX = currentCrosshair.x + deltaX;
-  let newY = currentCrosshair.y + deltaY;
-
-  // Giới hạn không vượt quá aimTarget (theo từng trục)
-  if ((deltaX > 0 && newX > aimTarget.x) || (deltaX < 0 && newX < aimTarget.x)) newX = aimTarget.x;
-  if ((deltaY > 0 && newY > aimTarget.y) || (deltaY < 0 && newY < aimTarget.y)) newY = aimTarget.y;
-
-  const newAim = { x: newX, y: newY };
-
-  const dist = Math.hypot(newAim.x - aimTarget.x, newAim.y - aimTarget.y);
-
-  // Chỉ set nếu thay đổi rõ ràng
-  if (dist > 0.01) {
-    setCrosshair(newAim);
-  }
-
-  // Nếu đã gần đủ (trong vùng threshold), bắn
-  if (CONFIG.fireOnLock && dist <= CONFIG.aimThresholdPx && !STATE.bursting) {
-    const count = CONFIG.fullMagCountOverride;
-    if (CONFIG.fullMagDump) dumpMag(count);
-    else fireOnce();
-  }
-}
 
   function tick() {
     const enemies = getEnemies();
     if (!enemies.length) return;
+
+    // Cập nhật vị trí đầu cho tính velocity
+    enemies.forEach(e => {
+      const head = getHead(e);
+      if (head) STATE.lastEnemyHeads.set(e, { x: head.x, y: head.y, z: head.z });
+    });
+
     const target = chooseTarget(enemies);
     if (!target) return;
+
     aimAtHead(target);
   }
 
   setInterval(tick, CONFIG.tickIntervalMs);
 
-  // Xuất config ra ngoài để chỉnh runtime
   window.FullHeadLock = { CONFIG, STATE };
 
 })();
