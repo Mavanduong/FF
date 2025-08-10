@@ -10,7 +10,7 @@
   'use strict';
 
   const CONFIG = {
-    headYOffsetPx: -2.5, // lệch xuống 2.5 pixel để tránh vuốt quá đầu và chuẩn headshot đỏ
+    headYOffsetPx: -2.8, // lệch xuống 2.5 pixel để tránh vuốt quá đầu và chuẩn headshot đỏ
     
     tickIntervalMs: 0.1,                 // tick cực nhanh
     crosshairNearThresholdPx: 999999,    // luôn coi là "near" để fire tức thì
