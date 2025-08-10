@@ -120,7 +120,6 @@ const CONFIG = {
     } catch(e){}
     STATE.bursting = false;
   }
-
 function aimAtHead(target) {
   const head = getHead(target);
   if (!head) return;
@@ -128,34 +127,98 @@ function aimAtHead(target) {
   const aimTarget = { x: head.x, y: head.y + CONFIG.headYOffsetPx };
   const currentCrosshair = (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 };
 
-  // Giới hạn crosshair không vượt quá đầu (theo trục Y)
-  let targetY = aimTarget.y;
-  if (currentCrosshair.y < aimTarget.y) {
-    // Nếu đang dưới đầu, không cho vượt lên trên đầu
-    targetY = Math.min(currentCrosshair.y + (aimTarget.y - currentCrosshair.y) * (CONFIG.smoothingFactor || 0.3), aimTarget.y);
-  } else {
-    // Nếu đang trên đầu rồi, giữ nguyên hoặc kéo nhẹ về đầu
-    targetY = Math.max(currentCrosshair.y - (currentCrosshair.y - aimTarget.y) * (CONFIG.smoothingFactor || 0.3), aimTarget.y);
-  }
+  // Tính delta để vuốt mượt, giới hạn không vượt quá aimTarget
+  let deltaX = (aimTarget.x - currentCrosshair.x) * CONFIG.smoothingFactor;
+  let deltaY = (aimTarget.y - currentCrosshair.y) * CONFIG.smoothingFactor;
 
-  // Tương tự với trục X nếu cần smoothing (hoặc snap luôn)
-  let targetX = aimTarget.x;
-  if (CONFIG.smoothingFactor > 0) {
-    targetX = currentCrosshair.x + (aimTarget.x - currentCrosshair.x) * CONFIG.smoothingFactor;
-  }
+  // Cập nhật vị trí aim mới
+  let newX = currentCrosshair.x + deltaX;
+  let newY = currentCrosshair.y + deltaY;
 
-  // Đặt lại crosshair với giới hạn
-  const newAim = { x: targetX, y: targetY };
+  // Giới hạn không vượt quá aimTarget (theo từng trục)
+  if ((deltaX > 0 && newX > aimTarget.x) || (deltaX < 0 && newX < aimTarget.x)) newX = aimTarget.x;
+  if ((deltaY > 0 && newY > aimTarget.y) || (deltaY < 0 && newY < aimTarget.y)) newY = aimTarget.y;
 
-  // Tính khoảng cách giữa crosshair mới và đầu mục tiêu
+  const newAim = { x: newX, y: newY };
+
   const dist = Math.hypot(newAim.x - aimTarget.x, newAim.y - aimTarget.y);
 
-  // Chỉ set crosshair nếu khác nhiều để tránh giật mạnh
-  if (dist > 0.1) {
+  // Chỉ set nếu thay đổi rõ ràng
+  if (dist > 0.01) {
     setCrosshair(newAim);
   }
 
-  // Nếu đã gần đủ, bắn
+  // Nếu đã gần đủ (trong vùng threshold), bắn
+  if (CONFIG.fireOnLock && dist <= CONFIG.aimThresholdPx && !STATE.bursting) {
+    const count = CONFIG.fullMagCountOverride;
+    if (CONFIG.fullMagDump) dumpMag(count);
+    else fireOnce();
+  }
+}
+function aimAtHead(target) {
+  const head = getHead(target);
+  if (!head) return;
+
+  const aimTarget = { x: head.x, y: head.y + CONFIG.headYOffsetPx };
+  const currentCrosshair = (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 };
+
+  // Tính delta để vuốt mượt, giới hạn không vượt quá aimTarget
+  let deltaX = (aimTarget.x - currentCrosshair.x) * CONFIG.smoothingFactor;
+  let deltaY = (aimTarget.y - currentCrosshair.y) * CONFIG.smoothingFactor;
+
+  // Cập nhật vị trí aim mới
+  let newX = currentCrosshair.x + deltaX;
+  let newY = currentCrosshair.y + deltaY;
+
+  // Giới hạn không vượt quá aimTarget (theo từng trục)
+  if ((deltaX > 0 && newX > aimTarget.x) || (deltaX < 0 && newX < aimTarget.x)) newX = aimTarget.x;
+  if ((deltaY > 0 && newY > aimTarget.y) || (deltaY < 0 && newY < aimTarget.y)) newY = aimTarget.y;
+
+  const newAim = { x: newX, y: newY };
+
+  const dist = Math.hypot(newAim.x - aimTarget.x, newAim.y - aimTarget.y);
+
+  // Chỉ set nếu thay đổi rõ ràng
+  if (dist > 0.01) {
+    setCrosshair(newAim);
+  }
+
+  // Nếu đã gần đủ (trong vùng threshold), bắn
+  if (CONFIG.fireOnLock && dist <= CONFIG.aimThresholdPx && !STATE.bursting) {
+    const count = CONFIG.fullMagCountOverride;
+    if (CONFIG.fullMagDump) dumpMag(count);
+    else fireOnce();
+  }
+}
+function aimAtHead(target) {
+  const head = getHead(target);
+  if (!head) return;
+
+  const aimTarget = { x: head.x, y: head.y + CONFIG.headYOffsetPx };
+  const currentCrosshair = (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 };
+
+  // Tính delta để vuốt mượt, giới hạn không vượt quá aimTarget
+  let deltaX = (aimTarget.x - currentCrosshair.x) * CONFIG.smoothingFactor;
+  let deltaY = (aimTarget.y - currentCrosshair.y) * CONFIG.smoothingFactor;
+
+  // Cập nhật vị trí aim mới
+  let newX = currentCrosshair.x + deltaX;
+  let newY = currentCrosshair.y + deltaY;
+
+  // Giới hạn không vượt quá aimTarget (theo từng trục)
+  if ((deltaX > 0 && newX > aimTarget.x) || (deltaX < 0 && newX < aimTarget.x)) newX = aimTarget.x;
+  if ((deltaY > 0 && newY > aimTarget.y) || (deltaY < 0 && newY < aimTarget.y)) newY = aimTarget.y;
+
+  const newAim = { x: newX, y: newY };
+
+  const dist = Math.hypot(newAim.x - aimTarget.x, newAim.y - aimTarget.y);
+
+  // Chỉ set nếu thay đổi rõ ràng
+  if (dist > 0.01) {
+    setCrosshair(newAim);
+  }
+
+  // Nếu đã gần đủ (trong vùng threshold), bắn
   if (CONFIG.fireOnLock && dist <= CONFIG.aimThresholdPx && !STATE.bursting) {
     const count = CONFIG.fullMagCountOverride;
     if (CONFIG.fullMagDump) dumpMag(count);
