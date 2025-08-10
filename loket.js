@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v14.7-UltraSmoothNoDelay
-// @version      14.7
-// @description  Mượt mà ảo mà bắn ngay lập tức, không delay fire, vẫn giữ fake shake nhẹ
+// @name         AutoHeadlockProMax v14.8-DirectHeadSnap
+// @version      14.8
+// @description  Tâm snap thẳng vào đầu cực mạnh, không delay, vẫn giữ mượt ở xa
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
@@ -10,7 +10,7 @@
   const CONFIG = {
     tickIntervalMs: 1,
     crosshairNearThresholdPx: 900,
-    clampStepPx: 0.00005,
+    clampStepPx: 0.005, // tăng mạnh so với 0.00005 để snap nhanh hơn
     maxLeadMs: 220,
     weaponProfiles: {
       default: { projectileSpeed: 99999999, multiBulletCount: 10, burstCompFactor: 1.5 },
@@ -18,9 +18,11 @@
       M1014:   { projectileSpeed: 99999999, multiBulletCount: 8,  burstCompFactor: 1.8 },
       Vector:  { projectileSpeed: 99999999, multiBulletCount: 12, burstCompFactor: 1.6 }
     },
-    instantFireIfHeadLocked: true, // Bắn ngay khi tâm đủ gần đầu
-    smoothingFactor: 99,
-    shakeAmplitudePx: 2.5, // nhẹ hơn chút để vẫn ảo mà không bị giật
+    instantFireIfHeadLocked: true,
+    smoothingFactorFar: 0.95,  // vẫn mượt khi xa
+    smoothingFactorNear: 1.0,  // gần đầu thì không làm chậm (snap ngay)
+    shakeAmplitudePx: 2.5,
+    shakeNearFactor: 0.2 // khi gần đầu, shake giảm mạnh để không lệch
   };
 
   let STATE = {
@@ -63,21 +65,20 @@
     return { x: lerp(cur.x, target.x, t), y: lerp(cur.y, target.y, t) };
   }
 
-  function clampAimMove(current, target, maxStepPx = CONFIG.clampStepPx, smoothing = CONFIG.smoothingFactor) {
-  const dx = target.x - current.x;
-  const dy = target.y - current.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  if (dist <= maxStepPx) return { x: target.x, y: target.y };
-  const ratio = maxStepPx / dist;
-  const clamped = { x: current.x + dx * ratio, y: current.y + dy * ratio };
-  // smoothing mượt hơn bằng cách lấy trung bình có trọng số
-  return {
-    x: current.x + (clamped.x - current.x) * smoothing,
-    y: current.y + (clamped.y - current.y) * smoothing
-  };
-}
+  function clampAimMove(current, target, maxStepPx, smoothing) {
+    const dx = target.x - current.x;
+    const dy = target.y - current.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist <= maxStepPx) return { x: target.x, y: target.y };
+    const ratio = maxStepPx / dist;
+    const clamped = { x: current.x + dx * ratio, y: current.y + dy * ratio };
+    return {
+      x: current.x + (clamped.x - current.x) * smoothing,
+      y: current.y + (clamped.y - current.y) * smoothing
+    };
+  }
 
-  function predictUltra(enemy, msAhead = CONFIG.maxLeadMs) {
+  function predictUltra(enemy, msAhead) {
     if (!enemy) return null;
     const head = getHeadPos(enemy);
     if (!head) return null;
@@ -91,7 +92,6 @@
     return predicted;
   }
 
-  // Auto bù offset calibration
   function autoCalibrateAim(currentPos, targetPos) {
     const errorX = targetPos.x - currentPos.x;
     const errorY = targetPos.y - currentPos.y;
@@ -102,15 +102,12 @@
     STATE.calibrationOffset.y *= 0.85;
   }
 
-  // Lắc nhẹ để tạo ảo giác vuốt tự nhiên
-  function applyShake(pos) {
+  function applyShake(pos, near) {
     const t = now();
-    let shakeX = Math.sin(t / 130) * CONFIG.shakeAmplitudePx * (Math.random() * 0.6 + 0.4);
-    let shakeY = Math.cos(t / 180) * CONFIG.shakeAmplitudePx * (Math.random() * 0.6 + 0.4);
-    return {
-      x: pos.x + shakeX,
-      y: pos.y + shakeY,
-    };
+    const amp = near ? CONFIG.shakeAmplitudePx * CONFIG.shakeNearFactor : CONFIG.shakeAmplitudePx;
+    let shakeX = Math.sin(t / 130) * amp * (Math.random() * 0.6 + 0.4);
+    let shakeY = Math.cos(t / 180) * amp * (Math.random() * 0.6 + 0.4);
+    return { x: pos.x + shakeX, y: pos.y + shakeY };
   }
 
   function crosshairIsNearHead(enemy, thresholdPx = CONFIG.crosshairNearThresholdPx) {
@@ -127,31 +124,16 @@
     const player = getPlayer();
     const wname = (player.weapon && player.weapon.name) ? player.weapon.name : 'default';
     const prof = CONFIG.weaponProfiles[wname] || CONFIG.weaponProfiles.default;
-
-    if (prof.projectileSpeed && prof.projectileSpeed < 1e9) {
-      const dist = distanceBetween(player, head);
-      const travelSec = dist / prof.projectileSpeed;
-      let leadMs = travelSec * 1000;
-      if (leadMs > CONFIG.maxLeadMs) leadMs = CONFIG.maxLeadMs;
-
-      const bullets = prof.multiBulletCount || 1;
-      if (bullets <= 1) return predictUltra(enemy, leadMs);
-
-      const positions = [];
-      for (let i = 0; i < bullets; i++) {
-        const msOffset = leadMs + i * 7;
-        positions.push(predictUltra(enemy, msOffset));
-      }
-      const avgPos = positions.reduce((acc, p) => ({
-        x: acc.x + p.x,
-        y: acc.y + p.y,
-      }), { x: 0, y: 0 });
-      return {
-        x: avgPos.x / bullets,
-        y: avgPos.y / bullets,
-      };
-    }
-    return predictUltra(enemy, CONFIG.maxLeadMs);
+    const dist = distanceBetween(player, head);
+    const travelSec = dist / prof.projectileSpeed;
+    let leadMs = travelSec * 1000;
+    if (leadMs > CONFIG.maxLeadMs) leadMs = CONFIG.maxLeadMs;
+    const bullets = prof.multiBulletCount || 1;
+    if (bullets <= 1) return predictUltra(enemy, leadMs);
+    const positions = [];
+    for (let i = 0; i < bullets; i++) positions.push(predictUltra(enemy, leadMs + i * 7));
+    const avgPos = positions.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+    return { x: avgPos.x / bullets, y: avgPos.y / bullets };
   }
 
   function scoreTarget(enemy) {
@@ -175,60 +157,27 @@
     return best;
   }
 
-  function willPeekSoon(enemy) {
-    if (!enemy) return false;
-    if (enemy.isAtCoverEdge || enemy.peekIntent) return true;
-    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
-    const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
-    if (speed < 0.15 && (enemy.priorSpeed && enemy.priorSpeed > 0.5)) return true;
-    return Math.random() < 0.22;
-  }
-
   function engageTarget(target) {
-    if (!target) return;
-    const player = getPlayer();
     const head = getHeadPos(target);
     if (!head) return;
-    const dist = distanceBetween(player, head);
-
     let aimPos = applyWeaponCompensation(target) || head;
-
     autoCalibrateAim(crosshairPos(), aimPos);
-
-    // Thêm shake nhẹ để vuốt mượt, ảo tự nhiên
-    aimPos = applyShake(aimPos);
-
+    const near = crosshairIsNearHead(target, CONFIG.crosshairNearThresholdPx);
+    aimPos = applyShake(aimPos, near);
     const current = crosshairPos();
-    const nextPos = clampAimMove(current, aimPos, CONFIG.clampStepPx);
-    const smoothNext = lerpPos(current, nextPos, CONFIG.smoothingFactor);
-    setCrosshair(smoothNext);
-
-    // Bắn ngay khi tâm gần đầu (không delay)
-    if (CONFIG.instantFireIfHeadLocked && crosshairIsNearHead(target, CONFIG.crosshairNearThresholdPx)) {
-      fireNow();
-    }
+    const smoothing = near ? CONFIG.smoothingFactorNear : CONFIG.smoothingFactorFar;
+    const nextPos = clampAimMove(current, aimPos, CONFIG.clampStepPx, smoothing);
+    setCrosshair(nextPos);
+    if (CONFIG.instantFireIfHeadLocked && near) fireNow();
   }
 
   function tick() {
-    try {
-      const enemies = getEnemies();
-      if (!enemies || enemies.length === 0) return;
-      const target = chooseTarget(enemies);
-      if (!target) return;
-      engageTarget(target);
-    } catch (e) { }
+    const enemies = getEnemies();
+    if (!enemies.length) return;
+    const target = chooseTarget(enemies);
+    if (!target) return;
+    engageTarget(target);
   }
 
-  function init() {
-    try {
-      if (window.game && typeof game.on === 'function') {
-        try { game.on('playerDamaged', () => { STATE.lastShotAt = now(); }); } catch (e) { }
-      }
-    } catch (e) { }
-    setInterval(tick, CONFIG.tickIntervalMs);
-    console.log('[AutoHeadlockProMax v14.7] UltraSmoothNoDelay loaded');
-  }
-
-  init();
-
+  setInterval(tick, CONFIG.tickIntervalMs);
 })();
