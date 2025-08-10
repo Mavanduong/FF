@@ -10,7 +10,7 @@
   'use strict';
 
   const CONFIG = {
-    headYOffsetPx: -2.5, // Lệch xuống 2.5px để tâm luôn đúng giữa đầu -> full đỏ
+    headYOffsetPx: -3, // Lệch xuống 2.5px để tâm luôn đúng giữa đầu -> full đỏ
     tickIntervalMs: 0.1, // Tick siêu nhanh (càng nhỏ càng mượt)
     aimLockStrength: 9999, // Độ hút đầu (càng cao càng mạnh, 9999 = tuyệt đối)
     smoothingFactor: 0.0, // 0 = không làm chậm, aim dính tức thì
