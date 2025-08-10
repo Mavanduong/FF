@@ -10,15 +10,15 @@
   'use strict';
 
   const CONFIG = {
-    headYOffsetPx: -2.5,
-    tickIntervalMs: 0.1,
-    aimLockStrength: 9999,
-    smoothingFactor: 0.0,
+    headYOffsetPx: -3.5,
+    tickIntervalMs: 0.0001,
+    aimLockStrength: 9999000000000,
+    smoothingFactor: 0.000,
     fireOnLock: true,
     fullMagDump: true,
     fullMagCountOverride: 30,
-    aimThresholdPx: 20,           // Vùng lock đầu rộng hơn (px)
-    maxTargetsConsidered: 10,     // Số target để xét ưu tiên
+    aimThresholdPx: 99999,           // Vùng lock đầu rộng hơn (px)
+    maxTargetsConsidered: 1000000,     // Số target để xét ưu tiên
   };
 
   let STATE = {
