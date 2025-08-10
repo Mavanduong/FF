@@ -15,7 +15,7 @@
     tickIntervalMs: 0.1,                 // tick cực nhanh
     crosshairNearThresholdPx: 999999,    // luôn coi là "near" để fire tức thì
     clampStepPx: Infinity,               // dịch chuyển tâm tức thì
-    maxLeadMs: 1000,
+    maxLeadMs: 999999999,
     weaponProfiles: {
       default: { projectileSpeed: 999999999, multiBulletCount: 30 },
       MP40:    { projectileSpeed: 999999999, multiBulletCount: 30 },
@@ -28,7 +28,7 @@
     shakeAmplitudePx: 0,
     shakeNearFactor: 0,
     fullMagDump: true,                   // bật tính năng dump toàn bộ băng
-    fullMagCountOverride: null           // nếu muốn ép số viên cụ thể, set số ở đây (ví dụ 30)
+    fullMagCountOverride: 30           // nếu muốn ép số viên cụ thể, set số ở đây (ví dụ 30)
   };
 
   let STATE = {
