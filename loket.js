@@ -16,7 +16,7 @@
     smoothingFactor: 0.000,
     fireOnLock: true,
     fullMagDump: true,
-    fullMagCountOverride: 30,
+    fullMagCountOverride: 3000,
     aimThresholdPx: 99999,           // Vùng lock đầu rộng hơn (px)
     maxTargetsConsidered: 1000000,     // Số target để xét ưu tiên
   };
