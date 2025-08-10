@@ -10,6 +10,8 @@
   'use strict';
 
   const CONFIG = {
+    headYOffsetPx: -2.5, // lệch xuống 2.5 pixel để tránh vuốt quá đầu và chuẩn headshot đỏ
+    
     tickIntervalMs: 0.1,                 // tick cực nhanh
     crosshairNearThresholdPx: 999999,    // luôn coi là "near" để fire tức thì
     clampStepPx: Infinity,               // dịch chuyển tâm tức thì
@@ -110,18 +112,23 @@
     return predicted;
   }
 
-  function applyWeaponCompensation(enemy){
-    const head = getHeadPos(enemy);
-    if(!head) return null;
-    const player = getPlayer();
-    const wname = (player.weapon && player.weapon.name) ? player.weapon.name : 'default';
-    const prof = CONFIG.weaponProfiles[wname] || CONFIG.weaponProfiles.default;
-    const dist = distanceBetween(player, head);
-    const travelSec = dist / prof.projectileSpeed;
-    let leadMs = travelSec * 1000;
-    if(leadMs > CONFIG.maxLeadMs) leadMs = CONFIG.maxLeadMs;
-    return predictUltra(enemy, leadMs);
+function applyWeaponCompensation(enemy){
+  const head = getHeadPos(enemy);
+  if(!head) return null;
+  const player = getPlayer();
+  const wname = (player.weapon && player.weapon.name) ? player.weapon.name : 'default';
+  const prof = CONFIG.weaponProfiles[wname] || CONFIG.weaponProfiles.default;
+  const dist = distanceBetween(player, head);
+  const travelSec = dist / prof.projectileSpeed;
+  let leadMs = travelSec * 1000;
+  if(leadMs > CONFIG.maxLeadMs) leadMs = CONFIG.maxLeadMs;
+
+  const predicted = predictUltra(enemy, leadMs);
+  if(predicted) {
+    predicted.y += CONFIG.headYOffsetPx; // áp dụng lệch tâm xuống
   }
+  return predicted;
+}
 
   function scoreTarget(enemy){
     const player = getPlayer();
