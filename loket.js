@@ -10,13 +10,13 @@
   'use strict';
 
 const CONFIG = {
-  headYOffsetPx: -3.5,
-  tickIntervalMs: 5,            // ~200 lần/s, đủ mượt và ổn
-  smoothingFactor: 0.25,        // vuốt mượt, 0.1~0.3 là đẹp, ko quá nhanh
+  headYOffsetPx: -4,
+  tickIntervalMs: 88888888,            // ~200 lần/s, đủ mượt và ổn
+  smoothingFactor: 0.0001,        // vuốt mượt, 0.1~0.3 là đẹp, ko quá nhanh
   fireOnLock: true,
   fullMagDump: true,
   fullMagCountOverride: 30,     // xả đủ băng, không quá lớn
-  aimThresholdPx: 10,           // vùng lock khoảng 10px là đủ để bắn đỏ, ko quá rộng
+  aimThresholdPx: 15,           // vùng lock khoảng 10px là đủ để bắn đỏ, ko quá rộng
   maxTargetsConsidered: 20,
 };
 
