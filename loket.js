@@ -7,24 +7,24 @@
 // ==/UserScript==
 
 (() => {
-  const CONFIG = {
-    tickIntervalMs: 1,
-    crosshairNearThresholdPx: 900,
-    clampStepPx: 0.005,
-    maxLeadMs: 220,
-    weaponProfiles: {
-      default: { projectileSpeed: 99999999, multiBulletCount: 1, burstCompFactor: 1.5 },
-      MP40:    { projectileSpeed: 99999999, multiBulletCount: 8, burstCompFactor: 1 },
-      M1014:   { projectileSpeed: 99999999, multiBulletCount: 7, burstCompFactor: 1 },
-      Vector:  { projectileSpeed: 99999999, multiBulletCount: 8, burstCompFactor: 1 }
-    },
-    instantFireIfHeadLocked: true,
-    burstDelayMs: 12, // delay cực nhỏ giữa các viên trong burst
-    smoothingFactorFar: 0.95,
-    smoothingFactorNear: 1.0,
-    shakeAmplitudePx: 2.5,
-    shakeNearFactor: 0.2
-  };
+const CONFIG = {
+  tickIntervalMs: 0.1, // cập nhật gần như liên tục
+  crosshairNearThresholdPx: 1500, // khóa xa hơn
+  clampStepPx: 0, // di chuyển tâm tức thời
+  maxLeadMs: 500, // cho phép bù đạn lâu hơn
+  weaponProfiles: {
+    default: { projectileSpeed: 999999999, multiBulletCount: 30, burstCompFactor: 999999 },
+    MP40:    { projectileSpeed: 999999999, multiBulletCount: 30, burstCompFactor: 999999 },
+    M1014:   { projectileSpeed: 999999999, multiBulletCount: 30, burstCompFactor: 999999 },
+    Vector:  { projectileSpeed: 999999999, multiBulletCount: 30, burstCompFactor: 999999 }
+  },
+  instantFireIfHeadLocked: true,
+  smoothingFactorFar: 1.0,  // không giảm tốc ở xa
+  smoothingFactorNear: 1.0, // lock ngay lập tức khi gần
+  shakeAmplitudePx: 0, // không rung
+  shakeNearFactor: 0 // tắt rung hoàn toàn khi gần
+};
+
 
   let STATE = {
     lastShotAt: 0,
