@@ -76,41 +76,27 @@
     }
   }
 
-  // Full-mag dump: gọi fire() liên tiếp trong cùng tick (gần như đồng thời)
-  function fullMagDump(count){
-    if(STATE.bursting) return;
-    STATE.bursting = true;
-    try {
-      // Nếu game.fire() là async hoặc có cooldown nội bộ, gọi liên tiếp vẫn là cách "max"
-      for(let i=0;i<count;i++){
-        fireOnce();
-      }
-    } catch(e) {
-      // fallback: bật setTimeout nếu loop thẳng gặp lỗi
-      let fired = 0;
-      const loop = () => {
-        if(fired >= count){ STATE.bursting = false; return; }
-        fireOnce(); fired++;
-        setTimeout(loop, 0);
-      };
-      loop();
-      return;
+ function fullMagDump(count){
+  if(STATE.bursting) return;
+  STATE.bursting = true;
+  try {
+    // Reset cooldown nếu tồn tại
+    if (game.player && game.player.weapon) {
+      game.player.weapon.lastShotTime = 0;
+      game.player.weapon.fireCooldown = 0;
     }
-    STATE.bursting = false;
+    for(let i = 0; i < count; i++){
+      fireOnce();
+      if (game.player && game.player.weapon) {
+        game.player.weapon.lastShotTime = 0; // reset liên tục
+      }
+    }
+  } catch(e) {
+    console.error(e);
   }
+  STATE.bursting = false;
+}
 
-  function predictUltra(enemy, msAhead){
-    const head = getHeadPos(enemy);
-    if(!head) return null;
-    const vel = enemy.velocity || { x:0,y:0,z:0 };
-    const predicted = {
-      x: head.x + vel.x * (msAhead/1000),
-      y: head.y + vel.y * (msAhead/1000)
-    };
-    predicted.x += STATE.calibrationOffset.x;
-    predicted.y += STATE.calibrationOffset.y;
-    return predicted;
-  }
 
 function applyWeaponCompensation(enemy){
   const head = getHeadPos(enemy);
