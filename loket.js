@@ -21,7 +21,7 @@
     // Weapon compensation profiles (example values, tune to your engine)
     weaponProfiles: {
       default: { recoilX: 0, recoilY: 0, spreadComp: 1.0, projectileSpeed: 999999 },
-      MP40:    { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 1400 },
+      MP40:    { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 18800 },
       M1014:   { recoilX: 0.0, recoilY: 0.0, spreadComp: 0.95, projectileSpeed: 1200 },
       Vector:  { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.05, projectileSpeed: 1500 }
     },
