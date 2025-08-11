@@ -120,13 +120,16 @@
     const aimTarget = { x: predicted.x, y: predicted.y + CONFIG.headYOffsetPx };
     const current = (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x:0, y:0 };
 
-    // Nếu đang giữ bắn → lia mượt
     const smoothing = STATE.bursting ? CONFIG.smoothingFollow : CONFIG.smoothingSnap;
 
     let newX = current.x + (aimTarget.x - current.x) * smoothing;
     let newY = current.y + (aimTarget.y - current.y) * smoothing;
 
-    // Nếu quá lệch → snap luôn
+    // Nếu tâm đang cao hơn đầu -> giữ nguyên, không kéo cao thêm
+    if (current.y <= aimTarget.y) {
+        newY = Math.min(newY, current.y);
+    }
+
     if (Math.hypot(newX - aimTarget.x, newY - aimTarget.y) > CONFIG.aimThresholdPx) {
       newX = aimTarget.x;
       newY = aimTarget.y;
@@ -135,19 +138,19 @@
     const newAim = { x: newX, y: newY };
     setCrosshair(newAim);
 
-    // Khi gần head → bắn theo từng viên
     if (CONFIG.fireOnLock && Math.hypot(newAim.x - aimTarget.x, newAim.y - aimTarget.y) <= CONFIG.aimThresholdPx) {
-      if (!STATE.bursting) {
-        STATE.bursting = true;
-        for (let i = 0; i < CONFIG.fullMagCountOverride; i++) {
-          const adjustedAim = multiBulletAdjustment(aimTarget, i);
-          setCrosshair(adjustedAim);
-          fireOnce();
+        if (!STATE.bursting) {
+            STATE.bursting = true;
+            for (let i = 0; i < CONFIG.fullMagCountOverride; i++) {
+                const adjustedAim = multiBulletAdjustment(aimTarget, i);
+                setCrosshair(adjustedAim);
+                fireOnce();
+            }
+            STATE.bursting = false;
         }
-        STATE.bursting = false;
-      }
     }
-  }
+}
+
 
   function tick() {
   const enemies = getEnemies();
