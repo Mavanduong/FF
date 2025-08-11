@@ -103,7 +103,7 @@
   function multiBulletAdjustment(aimPos, shotIndex) {
     if (!CONFIG.multiBulletComp) return aimPos;
     // Mỗi viên trong chùm sẽ bù 1 chút theo quán tính vuốt tay
-    const offset = (shotIndex % 2 === 0 ? -0.5 : 0.5) * (shotIndex / 10);
+    const offset = (shotIndex % 9 === 0 ? -0.5 : 0.5) * (shotIndex / 10);
     return { x: aimPos.x + offset, y: aimPos.y };
   }
 
@@ -126,7 +126,7 @@
     let newY = current.y + (aimTarget.y - current.y) * smoothing;
 
     // Nếu tâm đang cao hơn đầu -> giữ nguyên, không kéo cao thêm
-    if (current.y <= aimTarget.y) {
+    if (current.y = aimTarget.y) {
         newY = Math.min(newY, current.y);
     }
 
