@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         AutoHeadlockHardLock v20.0
-// @version      20.0
-// @description  Hard lock, zero smoothing, instant head follow, predict movement
+// @name         AutoHeadlockHardLock v20.1
+// @version      20.1
+// @description  Hard lock, zero smoothing, instant head follow, predict movement + close-range body/leg skip
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
@@ -15,10 +15,10 @@
     bulletDropFactor: 0.001,
     fireOnLock: true,
     fullMagCountOverride: 60,
-    multiBulletComp: false
+    multiBulletComp: false,
+    closeRangeMeters: 3,       // Giới hạn khoảng cách gần
+    bodyHitboxTolerance: 1.0   // Sai số để xác định lock vào thân/chân
   };
-
-  let STATE = { bursting: false };
 
   function getPlayer() {
     return window.player || { x:0,y:0,z:0, vx:0, vy:0, vz:0 };
@@ -36,6 +36,22 @@
     return enemy.head || enemy.position || null;
   }
 
+  function getBody(enemy) {
+    if (!enemy) return null;
+    if (typeof enemy.getBone === 'function') {
+      try { return enemy.getBone('chest') || enemy.getBone('spine'); } catch(e){}
+    }
+    return enemy.body || enemy.position || null;
+  }
+
+  function getLeg(enemy) {
+    if (!enemy) return null;
+    if (typeof enemy.getBone === 'function') {
+      try { return enemy.getBone('pelvis') || enemy.getBone('left_leg'); } catch(e){}
+    }
+    return enemy.leg || enemy.position || null;
+  }
+
   function distance(a,b) {
     const dx = (a.x||0)-(b.x||0),
           dy = (a.y||0)-(b.y||0),
@@ -43,10 +59,33 @@
     return Math.sqrt(dx*dx + dy*dy + dz*dz);
   }
 
+  function isBodyOrLegLocked(headPos, bodyPos, legPos, crosshairPos) {
+    const distBody = distance(crosshairPos, bodyPos || {});
+    const distLeg  = distance(crosshairPos, legPos || {});
+    return (distBody < CONFIG.bodyHitboxTolerance || distLeg < CONFIG.bodyHitboxTolerance);
+  }
+
   function chooseTarget(enemies) {
     const player = getPlayer();
+    const crosshair = window.game && game.crosshair ? game.crosshair : { x:0, y:0, z:0 };
+
     return enemies
-      .filter(e => getHead(e))
+      .filter(e => {
+        const head = getHead(e);
+        if (!head) return false;
+
+        const dist = distance(player, head);
+
+        if (dist <= CONFIG.closeRangeMeters) {
+          // Nếu gần thì bỏ qua thân/chân
+          const body = getBody(e);
+          const leg  = getLeg(e);
+          if (isBodyOrLegLocked(head, body, leg, crosshair)) {
+            return false;
+          }
+        }
+        return true;
+      })
       .sort((a,b) => distance(player,getHead(a)) - distance(player,getHead(b)))[0] || null;
   }
 
@@ -96,7 +135,6 @@
     aim = applyBulletDrop(aim, dist);
     aim.y += CONFIG.headYOffsetPx;
 
-    // Đặt thẳng tâm vào đầu
     setCrosshair(aim);
 
     if (CONFIG.fireOnLock) {
