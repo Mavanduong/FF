@@ -10,16 +10,16 @@
   'use strict';
 
   const CONFIG = {
-    headYOffsetPx: -4,
-    tickIntervalMs: 1,           // tick cực nhanh để lia mượt
+    headYOffsetPx: -3.5,
+    tickIntervalMs: 999999999,           // tick cực nhanh để lia mượt
     smoothingFollow: 1,       // độ mượt khi lia
     smoothingSnap: 1,         // gần head thì bám nhanh hơn
     fireOnLock: true,
     fullMagDump: true,
     fullMagCountOverride: 60,    // hỗ trợ băng dài
-    aimThresholdPx: 30,          // chuẩn hơn, lock chặt
+    aimThresholdPx: 99999999,          // chuẩn hơn, lock chặt
     predictMs: 120,               // dự đoán chuyển động đầu
-    bulletDropFactor: 0.002,
+    bulletDropFactor: 0.001,
     multiBulletComp: true        // bù từng viên trong chùm
   };
 
