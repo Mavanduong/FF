@@ -150,18 +150,20 @@
   }
 
   function tick() {
-    const enemies = getEnemies();
-    if (enemies.length === 0) {
-      STATE.lastTarget = null;
-      return;
-    }
-    const target = STATE.lastTarget && getEnemies().includes(STATE.lastTarget)
-      ? STATE.lastTarget
-      : chooseTarget(enemies);
-    if (!target) return;
-    STATE.lastTarget = target;
-    aimAtHead(target);
-  }
+  const enemies = getEnemies();
+  if (!enemies.length) return;
+  const target = chooseTarget(enemies);
+  if (!target) return;
+
+  const head = predictHeadPosition(getHead(target), target);
+  const aimTarget = { x: head.x, y: head.y + CONFIG.headYOffsetPx };
+  setCrosshair(aimTarget);
+
+  if (CONFIG.fireOnLock) fireOnce();
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
 
   setInterval(tick, CONFIG.tickIntervalMs);
   window.FullHeadLock = { CONFIG, STATE };
