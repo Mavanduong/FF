@@ -12,8 +12,8 @@
     // Modes
     mode: 'fullpower', // fullpower | hybrid (if you want later)
     // Distances (meters)
-    closeRangeMeters: 6,      // < this = full-force instant snap + instant fire
-    preFireRange: 18,         // when enemy likely to peek, pre-fire
+    closeRangeMeters: 11,      // < this = full-force instant snap + instant fire
+    preFireRange: 35,         // when enemy likely to peek, pre-fire
     maxEngageDistance: 250,
     // Aim power & smoothing
     instantSnapDivisor: 1.0,  // 1 => full snap, larger => smoother (we keep 1)
