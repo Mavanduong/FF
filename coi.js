@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         FixRecoil v3.5 UltraPro GigaStealth + AntiLock Head Pull V2
-// @version      3.5.2
-// @description  Chống giật tối thượng + Tự động né đòn khi bị ghim đầu, kéo tâm xuống thân, tăng FPS, phản hồi cực nhanh trong game FPS
+// @name         FixRecoil v3.6 UltraPro GigaStealth + AntiLock Head Pull V2 + Shotgun TightSpread
+// @version      3.6.0
+// @description  Chống giật tối thượng + Né ghim đầu + Kéo tâm xuống thân + Gom đạn shotgun thành 1 tia
 // ==/UserScript==
 
 (function () {
@@ -40,6 +40,13 @@
         weapon.recoilRecovery = 190 + Math.random() * 15 * fpsBaseBoost;
         weapon.stability = (140 + Math.random() * 10) * stabilityBoost * fpsBaseBoost;
 
+        // --- Gom đạn shotgun thành 1 tia ---
+        if (/shotgun/i.test(weapon.name || "") || /m1014|m1887|spas/i.test(weapon.name || "")) {
+          weapon.spread = 0.0001; // gần như không tỏa
+          weapon.pelletSpread = 0.0001; // gom chặt
+          weapon.pelletCount = weapon.pelletCount || 8; // giữ số viên gốc
+        }
+
         delete weapon._backup;
       }
     }
@@ -51,16 +58,12 @@
       typeof game.isEnemyLockingPlayer === 'function'
     ) {
       if (game.isEnemyLockingPlayer()) {
-        if (Math.random() < 0.99) {  // 95% xác suất hoạt động
-          // Lệch random to hơn: 8-12px
+        if (Math.random() < 0.99) {  // 99% xác suất hoạt động
           const offsetX = (Math.random() - 0.5) * 18;
           const offsetY = (Math.random() - 0.5) * 18;
-
-          // Kéo tâm xuống thân (thấp hơn đầu khoảng 15px)
           const pullDownPx = 30;
 
-          // Cộng offset + kéo tâm xuống thân
-          game.crosshair.x += offsetX * 0.5;    // smoothing nhẹ
+          game.crosshair.x += offsetX * 0.5;
           game.crosshair.y += offsetY * 0.5 + pullDownPx * 0.9;
         }
       }
