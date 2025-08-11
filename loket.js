@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v18.5 - DeathTouch Ultra+
-// @version      18.5
-// @description  100% head lock, AI predict, no recoil/spread, kill fastest possible
+// @name         AutoHeadlockProMax v19.0 - Magnetic Beam Lock
+// @version      19.0
+// @description  Kéo là tâm lia mượt theo đầu cả chùm, 100% head lock, multi-bullet sync, predict + stick aim
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
@@ -11,20 +11,21 @@
 
   const CONFIG = {
     headYOffsetPx: -4,
-    tickIntervalMs: 1.5,          // nhanh hơn nữa
-    smoothingBase: 0.92,          // base mượt
-    smoothingClose: 0.99,         // gần thì mượt cực cao
+    tickIntervalMs: 1,           // tick cực nhanh để lia mượt
+    smoothingFollow: 0.85,       // độ mượt khi lia
+    smoothingSnap: 0.95,         // gần head thì bám nhanh hơn
     fireOnLock: true,
     fullMagDump: true,
-    fullMagCountOverride: 50,     // xả nhiều hơn
-    aimThresholdPx: 25,           // lock rộng hơn để không bỏ lỡ
-    extraPenetrationShots: 4,     // xuyên mạnh hơn
-    predictMs: 80,                // dự đoán vị trí đầu 80ms
-    bulletDropFactor: 0.002       // bù rơi đạn theo khoảng cách
+    fullMagCountOverride: 60,    // hỗ trợ băng dài
+    aimThresholdPx: 18,          // chuẩn hơn, lock chặt
+    predictMs: 60,               // dự đoán chuyển động đầu
+    bulletDropFactor: 0.002,
+    multiBulletComp: true        // bù từng viên trong chùm
   };
 
   let STATE = {
     bursting: false,
+    lastTarget: null
   };
 
   function getPlayer() {
@@ -54,13 +55,7 @@
     const player = getPlayer();
     return enemies
       .filter(e => getHead(e))
-      .map(e => {
-        const head = getHead(e);
-        const dist = distance(player, head);
-        const dangerScore = (e.isShooting ? 50 : 0) + (e.hp < 40 ? 20 : 0) + (200 - dist);
-        return { enemy: e, score: dangerScore };
-      })
-      .sort((a,b) => b.score - a.score)[0]?.enemy || null;
+      .sort((a,b) => distance(player,getHead(a)) - distance(player,getHead(b)))[0] || null;
   }
 
   function setCrosshair(pos) {
@@ -93,12 +88,7 @@
     STATE.bursting = false;
   }
 
-  function shootPenetrationShots() {
-    for(let i=0; i < CONFIG.extraPenetrationShots; i++) fireOnce();
-  }
-
   function predictHeadPosition(head, enemy) {
-    if (!enemy.vx && !enemy.vy) return head;
     return {
       x: head.x + (enemy.vx || 0) * (CONFIG.predictMs / 1000),
       y: head.y + (enemy.vy || 0) * (CONFIG.predictMs / 1000),
@@ -108,6 +98,13 @@
 
   function applyBulletDrop(aimPos, dist) {
     return { x: aimPos.x, y: aimPos.y - dist * CONFIG.bulletDropFactor };
+  }
+
+  function multiBulletAdjustment(aimPos, shotIndex) {
+    if (!CONFIG.multiBulletComp) return aimPos;
+    // Mỗi viên trong chùm sẽ bù 1 chút theo quán tính vuốt tay
+    const offset = (shotIndex % 2 === 0 ? -0.5 : 0.5) * (shotIndex / 10);
+    return { x: aimPos.x + offset, y: aimPos.y };
   }
 
   function aimAtHead(target) {
@@ -123,12 +120,13 @@
     const aimTarget = { x: predicted.x, y: predicted.y + CONFIG.headYOffsetPx };
     const current = (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x:0, y:0 };
 
-    const smoothing = dist < 15 ? CONFIG.smoothingClose : CONFIG.smoothingBase;
+    // Nếu đang giữ bắn → lia mượt
+    const smoothing = STATE.bursting ? CONFIG.smoothingFollow : CONFIG.smoothingSnap;
 
     let newX = current.x + (aimTarget.x - current.x) * smoothing;
     let newY = current.y + (aimTarget.y - current.y) * smoothing;
 
-    // Nếu lệch thì snap luôn
+    // Nếu quá lệch → snap luôn
     if (Math.hypot(newX - aimTarget.x, newY - aimTarget.y) > CONFIG.aimThresholdPx) {
       newX = aimTarget.x;
       newY = aimTarget.y;
@@ -137,18 +135,31 @@
     const newAim = { x: newX, y: newY };
     setCrosshair(newAim);
 
-    const distToTarget = Math.hypot(newAim.x - aimTarget.x, newAim.y - aimTarget.y);
-    if (CONFIG.fireOnLock && distToTarget <= CONFIG.aimThresholdPx && !STATE.bursting) {
-      shootPenetrationShots();
-      dumpMag(CONFIG.fullMagCountOverride);
+    // Khi gần head → bắn theo từng viên
+    if (CONFIG.fireOnLock && Math.hypot(newAim.x - aimTarget.x, newAim.y - aimTarget.y) <= CONFIG.aimThresholdPx) {
+      if (!STATE.bursting) {
+        STATE.bursting = true;
+        for (let i = 0; i < CONFIG.fullMagCountOverride; i++) {
+          const adjustedAim = multiBulletAdjustment(aimTarget, i);
+          setCrosshair(adjustedAim);
+          fireOnce();
+        }
+        STATE.bursting = false;
+      }
     }
   }
 
   function tick() {
     const enemies = getEnemies();
-    if (enemies.length === 0) return;
-    const target = chooseTarget(enemies);
+    if (enemies.length === 0) {
+      STATE.lastTarget = null;
+      return;
+    }
+    const target = STATE.lastTarget && getEnemies().includes(STATE.lastTarget)
+      ? STATE.lastTarget
+      : chooseTarget(enemies);
     if (!target) return;
+    STATE.lastTarget = target;
     aimAtHead(target);
   }
 
