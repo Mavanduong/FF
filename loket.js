@@ -12,7 +12,7 @@
   const CONFIG = {
     headYOffsetPx: -3.5,
     tickIntervalMs: 999999999,           // tick cực nhanh để lia mượt
-    smoothingFollow: 1,       // độ mượt khi lia
+    smoothingFollow: 0,000000001,       // độ mượt khi lia
     smoothingSnap: 1,         // gần head thì bám nhanh hơn
     fireOnLock: true,
     fullMagDump: true,
