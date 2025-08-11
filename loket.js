@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         AutoHeadlockHardLock v21.0-Universal
-// @version      21.0
-// @description  Hard lock 0 smoothing, always aim head in all ranges/stances
+// @name         UltraHardHeadMagnet v1.0
+// @version      1.0
+// @description  Instant forced headlock, 100% headshots, ignores body/legs, auto track while moving
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
@@ -10,15 +10,16 @@
   'use strict';
 
   const CONFIG = {
-    headYOffsetPx: -3.5,       // Bù vị trí đầu
     predictMs: 120,            // Dự đoán chuyển động
     bulletDropFactor: 0.001,   // Bù rơi đạn
-    fireOnLock: true,          // Tự bắn khi lock
-    fullMagCountOverride: 60   // Bắn cả băng
+    fireOnLock: true,          // Bắn khi lock
+    magDump: true,             // Xả full băng khi lock
+    headYOffsetPx: -3.5,       // Bù vị trí head hitbox
+    fullMagCountOverride: 60   // Số viên bắn
   };
 
   function getPlayer() {
-    return window.player || { x:0,y:0,z:0, vx:0, vy:0, vz:0 };
+    return window.player || { x:0, y:0, z:0, vx:0, vy:0, vz:0 };
   }
 
   function getEnemies() {
@@ -37,10 +38,10 @@
     return enemy.head || enemy.position || null;
   }
 
-  function distance(a,b) {
-    const dx = (a.x||0)-(b.x||0),
-          dy = (a.y||0)-(b.y||0),
-          dz = (a.z||0)-(b.z||0);
+  function distance(a, b) {
+    const dx = (a.x||0) - (b.x||0),
+          dy = (a.y||0) - (b.y||0),
+          dz = (a.z||0) - (b.z||0);
     return Math.sqrt(dx*dx + dy*dy + dz*dz);
   }
 
@@ -48,7 +49,19 @@
     const player = getPlayer();
     return enemies
       .filter(e => getHead(e))
-      .sort((a,b) => distance(player,getHead(a)) - distance(player,getHead(b)))[0] || null;
+      .sort((a, b) => distance(player, getHead(a)) - distance(player, getHead(b)))[0] || null;
+  }
+
+  function predictHeadPosition(head, enemy) {
+    return {
+      x: head.x + (enemy.vx || 0) * (CONFIG.predictMs / 1000),
+      y: head.y + (enemy.vy || 0) * (CONFIG.predictMs / 1000),
+      z: head.z + (enemy.vz || 0) * (CONFIG.predictMs / 1000)
+    };
+  }
+
+  function applyBulletDrop(aimPos, dist) {
+    return { x: aimPos.x, y: aimPos.y - dist * CONFIG.bulletDropFactor, z: aimPos.z };
   }
 
   function setCrosshair(pos) {
@@ -71,18 +84,6 @@
     }
   }
 
-  function predictHeadPosition(head, enemy) {
-    return {
-      x: head.x + (enemy.vx || 0) * (CONFIG.predictMs / 1000),
-      y: head.y + (enemy.vy || 0) * (CONFIG.predictMs / 1000),
-      z: head.z + (enemy.vz || 0) * (CONFIG.predictMs / 1000)
-    };
-  }
-
-  function applyBulletDrop(aimPos, dist) {
-    return { x: aimPos.x, y: aimPos.y - dist * CONFIG.bulletDropFactor };
-  }
-
   function tick() {
     const enemies = getEnemies();
     if (!enemies.length) return requestAnimationFrame(tick);
@@ -98,10 +99,16 @@
     aim = applyBulletDrop(aim, dist);
     aim.y += CONFIG.headYOffsetPx;
 
+    // Ép tâm vào đầu ngay lập tức
     setCrosshair(aim);
 
+    // Bắn nếu bật chế độ fireOnLock
     if (CONFIG.fireOnLock) {
-      for (let i = 0; i < CONFIG.fullMagCountOverride; i++) {
+      if (CONFIG.magDump) {
+        for (let i = 0; i < CONFIG.fullMagCountOverride; i++) {
+          fireOnce();
+        }
+      } else {
         fireOnce();
       }
     }
