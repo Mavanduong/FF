@@ -33,7 +33,14 @@ const CONFIG = {
     // Misc
     tickIntervalMs: 0,                    // tính toán liên tục không delay
     instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 0           // chỉ cần gần 0px là coi như khóa
+    crosshairNearThresholdPx: 0,           // chỉ cần gần 0px là coi như khókhóa  
+    tickIntervalMs: 0,
+    predictMs: 99999999999,
+    overtrackLeadFactor: 99999999999,
+    bulletDropFactor: 0,
+    headYOffsetPx: 0,
+    instantFireIfHeadLocked: true,
+    fireBurstCount: 99999999999,
   };
 
   /* ============== STATE ============== */
@@ -44,6 +51,39 @@ const CONFIG = {
     hits: 99999999999,            // coi như bắn trúng vô hạn
     misses: 0                     // không bao giờ trượt
   };;
+
+    function getPlayer() {
+    return window.player || { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
+  }
+
+  function getEnemies() {
+    return (window.game && game.enemies) ? game.enemies : [];
+  }
+
+  function getHead(enemy) {
+    if (!enemy) return null;
+    if (typeof enemy.getBone === 'function') {
+      try { return enemy.getBone('head'); } catch (e) {}
+    }
+    return enemy.head || enemy.position || null;
+  }
+
+  function distance(a, b) {
+    const dx = (a.x || 0) - (b.x || 0);
+    const dy = (a.y || 0) - (b.y || 0);
+    const dz = (a.z || 0) - (b.z || 0);
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
+  }
+
+  function predictHeadPosition(head, enemy) {
+    return {
+      x: head.x + (enemy.vx || 0) * (CONFIG.predictMs / 1000) * CONFIG.overtrackLeadFactor,
+      y: head.y + (enemy.vy || 0) * (CONFIG.predictMs / 1000) * CONFIG.overtrackLeadFactor,
+      z: head.z + (enemy.vz || 0) * (CONFIG.predictMs / 1000) * CONFIG.overtrackLeadFactor
+    };
+  }
+
+
 
   /* ============== ADAPTER HELPERS (Replace per Engine) ============== */
   // Provide your game's API mapping here.
