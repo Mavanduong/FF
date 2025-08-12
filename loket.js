@@ -12,12 +12,12 @@
     // Modes
     mode: 'fullpower', // fullpower | hybrid (if you want later)
     // Distances (meters)
-    closeRangeMeters: 11,      // < this = full-force instant snap + instant fire
-    preFireRange: 35,         // when enemy likely to peek, pre-fire
-    maxEngageDistance: 250,
+    closeRangeMeters: 999999,      // < this = full-force instant snap + instant fire
+    preFireRange: 9999,         // when enemy likely to peek, pre-fire
+    maxEngageDistance: 9999999999,
     // Aim power & smoothing
     instantSnapDivisor: 1.0,  // 1 => full snap, larger => smoother (we keep 1)
-    overtrackLeadFactor: 1.25, // overshoot a bit ahead of predicted head movement
+    overtrackLeadFactor: 10, // overshoot a bit ahead of predicted head movement
     // Weapon compensation profiles (example values, tune to your engine)
     weaponProfiles: {
       default: { recoilX: 0, recoilY: 0, spreadComp: 1.0, projectileSpeed: 999999 },
@@ -31,9 +31,9 @@
     burstCompEnabled: true,
     burstCompFactor: 1.12,    // stronger compensation for multi-shot spreads
     // Misc
-    tickIntervalMs: 6,
+    tickIntervalMs: 0,
     instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 6
+    crosshairNearThresholdPx: 0
   };
 
   /* ============== STATE ============== */
@@ -41,7 +41,7 @@
     lastShotAt: 0,
     sessionAimPower: 1e8,
     lastTargetId: null,
-    hits: 0,
+    hits: 999,
     misses: 0
   };
 
