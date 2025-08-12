@@ -8,42 +8,42 @@
 
 (() => {
   /* ============== CONFIG ============== */
-  const CONFIG = {
+const CONFIG = {
     // Modes
-    mode: 'fullpower', // fullpower | hybrid (if you want later)
+    mode: 'fullpower', // fullpower only
     // Distances (meters)
-    closeRangeMeters: 999999,      // < this = full-force instant snap + instant fire
-    preFireRange: 9999,         // when enemy likely to peek, pre-fire
-    maxEngageDistance: 9999999999,
+    closeRangeMeters: 99999999999,      // cực gần cũng khóa ngay
+    preFireRange: 99999999999,           // bắn trước từ mọi khoảng cách
+    maxEngageDistance: 99999999999,      // không giới hạn khoảng cách
     // Aim power & smoothing
-    instantSnapDivisor: 1.0,  // 1 => full snap, larger => smoother (we keep 1)
-    overtrackLeadFactor: 10, // overshoot a bit ahead of predicted head movement
-    // Weapon compensation profiles (example values, tune to your engine)
+    instantSnapDivisor: 1.0,             // khóa ngay lập tức
+    overtrackLeadFactor: 99999999999,    // dẫn tâm cực xa, bám chặt mục tiêu di chuyển
+    // Weapon compensation profiles
     weaponProfiles: {
-      default: { recoilX: 0, recoilY: 0, spreadComp: 1.0, projectileSpeed: 999999 },
-      MP40:    { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 18800 },
-      M1014:   { recoilX: 0.0, recoilY: 0.0, spreadComp: 0.95, projectileSpeed: 1200 },
-      Vector:  { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.05, projectileSpeed: 1500 }
+      default: { recoilX: 0, recoilY: 0, spreadComp: 1.0, projectileSpeed: 99999999999 },
+      MP40:    { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 99999999999 },
+      M1014:   { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 99999999999 },
+      Vector:  { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 99999999999 }
     },
     // Pre-fire tuning
-    preFireLeadMs: 60,        // ms to fire before predicted exposure
+    preFireLeadMs: 0,                     // bắn ngay lập tức
     // Multi-bullet (burst) handling
     burstCompEnabled: true,
-    burstCompFactor: 1.12,    // stronger compensation for multi-shot spreads
+    burstCompFactor: 99999999999,         // bù loạt đạn tối đa
     // Misc
-    tickIntervalMs: 0,
+    tickIntervalMs: 0,                    // tính toán liên tục không delay
     instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 0
+    crosshairNearThresholdPx: 0           // chỉ cần gần 0px là coi như khóa
   };
 
   /* ============== STATE ============== */
   let STATE = {
     lastShotAt: 0,
-    sessionAimPower: 1e8,
+    sessionAimPower: 99999999999, // sức mạnh khóa tối đa
     lastTargetId: null,
-    hits: 999,
-    misses: 0
-  };
+    hits: 99999999999,            // coi như bắn trúng vô hạn
+    misses: 0                     // không bao giờ trượt
+  };;
 
   /* ============== ADAPTER HELPERS (Replace per Engine) ============== */
   // Provide your game's API mapping here.
