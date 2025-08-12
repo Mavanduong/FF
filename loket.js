@@ -89,9 +89,6 @@ const CONFIG = {
   // Provide your game's API mapping here.
   function now() { return Date.now(); }
 
-  function getPlayer() {
-    return window.player || { x:0, y:0, z:0, hp:100, isAiming:false, weapon:{name:'default'} };
-  }
 
   function getEnemies() {
     // Expected each enemy: { id, head:{x,y,z}, position:{x,y,z}, velocity:{x,y,z}, health, isVisible, isAimingAtYou }
