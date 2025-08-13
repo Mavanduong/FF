@@ -1,60 +1,80 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v14.4-HumanBreaker-FullPower-FIXED
-// @version      14.4-fixed
-// @description  FULL POWER: instant head snap + pre-fire + overtrack + weapon compensation + burst handling. No fake-swipe, max aggression.
+// @name         AutoHeadlockProMax v15.0-NoEscape-GodMode-FullPower
+// @version      15.0
+// @description  FULL POWER: AI head turn prediction, magnetic stickiness, burst tracking, wall avoidance, auto-fire lead, beam smooth. NoEscape GodMode.
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
 
 (() => {
-  /* ============== CONFIG ============== */
+  'use strict';
+
+  /* ============== CONFIG (MAX POWER) ============== */
   const CONFIG = {
-    // Modes
-    mode: 'fullpower',
-    // Distances
-    closeRangeMeters: Number.MAX_SAFE_INTEGER,
-    preFireRange: Number.MAX_SAFE_INTEGER,
-    maxEngageDistance: Number.MAX_SAFE_INTEGER,
-    // Aim power & smoothing
-    instantSnapDivisor: 1.0,
-    overtrackLeadFactor: Number.MAX_SAFE_INTEGER,
-    // Weapon compensation profiles
-    weaponProfiles: {
-      default: { recoilX: 0, recoilY: 0, spreadComp: 1.0, projectileSpeed: Number.MAX_SAFE_INTEGER },
-      MP40:    { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: Number.MAX_SAFE_INTEGER },
-      M1014:   { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: Number.MAX_SAFE_INTEGER },
-      Vector:  { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: Number.MAX_SAFE_INTEGER }
-    },
-    // Pre-fire tuning
+    mode: 'NoEscape-GodMode',
+    // Ranges (use large numbers to effectively disable range limits if desired)
+    closeRangeMeters: 9999999,
+    preFireRange: 9999999,
+    maxEngageDistance: 9999999,
+
+    // Aim smoothing / snap
+    instantSnapDivisor: 1.0, // <=1 => instant snap, >1 => smoothing divisor
+
+    // Prediction & lead
+    headTurnPredictionMs: 220, // increased 200-250ms range (set 220)
+    autoFireLeadMs: 160,       // lead for firing (ms)
     preFireLeadMs: 0,
-    // Multi-bullet
-    burstCompEnabled: true,
-    burstCompFactor: Number.MAX_SAFE_INTEGER,
-    // Misc
-    tickIntervalMs: 16, // 60 FPS
-    instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 0,
-    predictMs: Number.MAX_SAFE_INTEGER,
-    bulletDropFactor: 0,
-    headYOffsetPx: 0,
-    headTurnPredictionMs: 150,
-    stickinessPx: 4,
-    stickinessHoldMs: 180,
+
+    // Stickiness (magnetic lock)
+    stickinessPx: 6,           // increased from 4 => stronger magnetic pull
+    stickinessHoldMs: 300,     // keep lock longer when LOS lost
+
+    // Wall / cover avoidance
     wallOffsetPx: 6,
+
+    // Beam smoothing (magnetic beam)
+    magneticBeamSmooth: 0.15,  // lower -> faster pull
+
+    // Burst / multi-bullet
     multiBulletWeapons: ['MP40', 'Vector', 'M1014'],
-    recoilCompPerBullet: 0.5,
+    recoilCompPerBullet: 0.9,  // strong per-bullet recoil compensation
+    burstCompEnabled: true,
+    burstCompFactor: 9999999,
+
+    // Weapon profiles (default high-power placeholders)
+    weaponProfiles: {
+      default: { recoilX: 0, recoilY: 0, spreadComp: 1.0, projectileSpeed: 1e9 },
+      MP40:    { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 1200 },
+      M1014:   { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 900 },
+      Vector:  { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 1300 }
+    },
+
+    // Other
+    instantFireIfHeadLocked: true,
+    crosshairNearThresholdPx: 10,
+    fireBurstCount: 9999999,
     dangerAimBonus: 5000,
     humanSwipeThresholdPx: 12,
-    autoFireLeadMs: 120,
     lagCompensation: true,
-    magneticBeamSmooth: 0.2
+    tickIntervalMs: 16, // 60 FPS
+    microCorrectionEnabled: true
   };
 
-  /* ============== STATE & UTILS ============== */
-  const STATE = { lastShotAt: 0 };
+  /* ============== STATE & UTILITIES ============== */
+  const STATE = {
+    lastShotAt: 0,
+    lastLockTime: 0,
+    lastBeamPos: null,
+    bulletIndex: 0
+  };
   const now = () => Date.now();
 
+  function safeGet(o, k, def = undefined) {
+    try { return o?.[k] ?? def; } catch (e) { return def; }
+  }
+
   function distanceBetween(a, b) {
+    if (!a || !b) return Infinity;
     const dx = (a.x || 0) - (b.x || 0);
     const dy = (a.y || 0) - (b.y || 0);
     const dz = (a.z || 0) - (b.z || 0);
@@ -62,96 +82,213 @@
   }
 
   function getPlayer() {
-    return (window.game && game.player) ? game.player : {};
+    try { return (window.game && game.player) ? game.player : (window.player || {}); } catch (e) { return {}; }
   }
 
   function getEnemies() {
-    return (window.game && Array.isArray(game.enemies)) ? game.enemies : [];
+    try { return (window.game && Array.isArray(game.enemies)) ? game.enemies : (window.enemies || []); } catch (e) { return []; }
   }
 
-  /* ============== FUNCTIONS ============== */
-  function getHeadPos(enemy) {
-    if (!enemy) return null;
-    if (typeof enemy.getBone === 'function') {
-      try { return enemy.getBone('head'); } catch (e) { return null; }
-    }
-    return enemy.head || enemy.position || null;
-  }
-
+  // crosshair pos in world screen coords or normalized coords depending on engine
   function crosshairPos() {
-    return (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 };
+    try { return (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 }; } catch (e) { return { x: 0, y: 0 }; }
   }
 
   function setCrosshair(pos) {
     if (!pos) return;
-    if (window.game && game.crosshair) {
-      game.crosshair.x = pos.x;
-      game.crosshair.y = pos.y;
-    }
+    try { if (window.game && game.crosshair) { game.crosshair.x = pos.x; game.crosshair.y = pos.y; } } catch (e) {}
+  }
+
+  function getHeadPos(enemy) {
+    if (!enemy) return null;
+    try {
+      if (typeof enemy.getBone === 'function') {
+        try { return enemy.getBone('head'); } catch (e) {}
+      }
+      return enemy.head || enemy.position || null;
+    } catch (e) { return null; }
   }
 
   function fireNow() {
-    if (window.game && typeof game.fire === 'function') {
-      game.fire();
-      STATE.lastShotAt = now();
-    }
+    try {
+      if (window.game && typeof game.fire === 'function') {
+        game.fire();
+        STATE.lastShotAt = now();
+        STATE.bulletIndex = (STATE.bulletIndex || 0) + 1;
+      } else if (typeof window.fire === 'function') {
+        window.fire();
+        STATE.lastShotAt = now();
+        STATE.bulletIndex = (STATE.bulletIndex || 0) + 1;
+      }
+    } catch (e) {}
   }
 
+  /* ============== PREDICTION & COMPENSATION ============== */
+
+  // Predict where enemy head will be after msAhead (combines velocity + view direction)
+  function predictHeadTurn(enemy, msAhead = CONFIG.headTurnPredictionMs) {
+    const head = getHeadPos(enemy);
+    if (!head) return null;
+    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
+    const view = enemy.viewDir || { x: 0, y: 0, z: 0 }; // facing vector if available
+    // Weighted combination: velocity for movement, view for head-turn
+    const t = (msAhead / 1000);
+    return {
+      x: head.x + (vel.x * 0.9 + view.x * 1.1) * t,
+      y: head.y + (vel.y * 0.9 + view.y * 1.1) * t,
+      z: (head.z || 0) + ((vel.z || 0) * 0.9 + (view.z || 0) * 1.1) * t
+    };
+  }
+
+  // Apply lag compensation based on network ping (if available)
+  function applyLagComp(pos, enemy) {
+    if (!CONFIG.lagCompensation || !pos || !enemy) return pos;
+    try {
+      const ping = (game && game.network && game.network.ping) ? game.network.ping : (game?.network?.ping || 0);
+      const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
+      const t = (ping / 1000);
+      return {
+        x: pos.x + vel.x * t,
+        y: pos.y + vel.y * t,
+        z: (pos.z || 0) + (vel.z || 0) * t
+      };
+    } catch (e) { return pos; }
+  }
+
+  // Beam smoothing to make motion look human and avoid abrupt jumps
+  function applyBeamMode(pos) {
+    if (!pos) return pos;
+    if (!STATE.lastBeamPos) {
+      STATE.lastBeamPos = { ...pos };
+      return pos;
+    }
+    const s = CONFIG.magneticBeamSmooth;
+    const next = {
+      x: STATE.lastBeamPos.x + (pos.x - STATE.lastBeamPos.x) * s,
+      y: STATE.lastBeamPos.y + (pos.y - STATE.lastBeamPos.y) * s,
+      z: (STATE.lastBeamPos.z || 0) + ((pos.z || 0) - (STATE.lastBeamPos.z || 0)) * s
+    };
+    STATE.lastBeamPos = next;
+    return next;
+  }
+
+  // Avoid aiming into walls — offset aim if raycast detects wall between player and head
+  function avoidWallOffset(enemy, pos) {
+    try {
+      const head = pos || getHeadPos(enemy);
+      if (!head) return null;
+      if (window.game && typeof game.raycast === 'function') {
+        const player = getPlayer();
+        try {
+          const r = game.raycast(player, head);
+          if (r && r.hitWall) {
+            // push aim slightly to the side (wallOffsetPx) — choose sign depending on relative positions
+            const sign = ((head.x - (player.x || 0)) >= 0) ? 1 : -1;
+            return { x: head.x + sign * CONFIG.wallOffsetPx, y: head.y, z: head.z };
+          }
+        } catch (e) { /* ignore */ }
+      }
+    } catch (e) {}
+    return pos;
+  }
+
+  // For multi-bullet weapons, track recoil per bullet (adjust aim downward/upward accordingly)
+  function trackBurst(enemy, bulletIndex = 0) {
+    const head = getHeadPos(enemy);
+    if (!head) return null;
+    const w = getPlayer().weapon ? getPlayer().weapon.name : 'default';
+    if (!CONFIG.multiBulletWeapons.includes(w)) return head;
+    const recoilAdj = bulletIndex * CONFIG.recoilCompPerBullet;
+    // apply a small vertical compensation (y axis or screen Y depending on engine)
+    return { x: head.x, y: head.y - recoilAdj, z: head.z };
+  }
+
+  // Apply weapon projectile compensation if projectileSpeed is meaningful
+  function applyWeaponCompensation(enemy) {
+    const head = getHeadPos(enemy);
+    if (!head) return null;
+    try {
+      const w = getPlayer().weapon ? getPlayer().weapon.name : 'default';
+      const prof = CONFIG.weaponProfiles[w] || CONFIG.weaponProfiles.default;
+      if (prof.projectileSpeed && prof.projectileSpeed < 1e8) {
+        const dist = distanceBetween(getPlayer(), head);
+        const travelSecs = dist / prof.projectileSpeed;
+        const leadMs = Math.max(0, travelSecs * 1000 * 1.0); // base factor 1.0
+        const p = predictPosition(enemy, leadMs + CONFIG.headTurnPredictionMs * 0.5);
+        return p || head;
+      }
+    } catch (e) {}
+    // fallback: head turn prediction + small world prediction
+    return predictPosition(enemy, CONFIG.headTurnPredictionMs) || head;
+  }
+
+  // Generic position predictor: velocity-based fallback if no engine predict()
   function predictPosition(enemy, msAhead = 0) {
     if (!enemy) return null;
     const head = getHeadPos(enemy);
     if (!head) return null;
-    if (typeof game !== 'undefined' && typeof game.predict === 'function') {
-      try { return game.predict(enemy, head, msAhead / 1000); } catch (e) {}
-    }
+    try {
+      if (typeof game !== 'undefined' && typeof game.predict === 'function') {
+        try { return game.predict(enemy, head, msAhead / 1000); } catch (e) {}
+      }
+    } catch (e) {}
     const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
+    const t = (msAhead / 1000);
     return {
-      x: head.x + vel.x * (msAhead / 1000),
-      y: head.y + vel.y * (msAhead / 1000),
-      z: (head.z || 0) + (vel.z || 0) * (msAhead / 1000)
+      x: head.x + (vel.x || 0) * t,
+      y: head.y + (vel.y || 0) * t,
+      z: (head.z || 0) + (vel.z || 0) * t
     };
   }
 
+  /* ============== STICKINESS / MAGNETIC LOCK ============== */
   function crosshairIsNearHead(enemy, thresholdPx = CONFIG.crosshairNearThresholdPx) {
     const head = getHeadPos(enemy);
     if (!head) return false;
     const ch = crosshairPos();
+    // If head coords are in world-space, engine mapping to screen may be required; assume same system here
     const dx = ch.x - head.x, dy = ch.y - head.y;
     return Math.sqrt(dx * dx + dy * dy) <= thresholdPx;
   }
 
-  function instantAimAt(pos) {
-    if (!pos) return;
-    setCrosshair({ x: pos.x, y: pos.y });
+  function applyStickiness(enemy, candidatePos) {
+    // If near head, update lastLockTime and return head pos to hold lock
+    try {
+      if (crosshairIsNearHead(enemy, CONFIG.stickinessPx)) {
+        STATE.lastLockTime = now();
+        return candidatePos || getHeadPos(enemy);
+      }
+      // If enemy lost visible but we recently had lock, keep it
+      if (!enemy.isVisible && (now() - STATE.lastLockTime) < CONFIG.stickinessHoldMs) {
+        return candidatePos || getHeadPos(enemy);
+      }
+    } catch (e) {}
+    return candidatePos;
   }
 
-  function applyWeaponCompensation(pos, enemy) {
-    if (!enemy) return pos;
-    const w = getPlayer().weapon ? getPlayer().weapon.name : 'default';
-    const prof = CONFIG.weaponProfiles[w] || CONFIG.weaponProfiles.default;
-    if (prof.projectileSpeed && prof.projectileSpeed < 1e6) {
-      const head = getHeadPos(enemy);
-      if (!head) return pos;
-      const dist = distanceBetween(getPlayer(), head);
-      const travelSecs = dist / prof.projectileSpeed;
-      const leadMs = travelSecs * 1000 * CONFIG.overtrackLeadFactor;
-      const p = predictPosition(enemy, leadMs);
-      if (p) return p;
-    }
-    const pDefault = predictPosition(enemy, 16 * CONFIG.overtrackLeadFactor);
-    return pDefault || getHeadPos(enemy);
+  /* ============== RISK / DANGER SCORE ============== */
+  function dangerScore(enemy) {
+    let score = 0;
+    if (enemy.isAimingAtYou) score += CONFIG.dangerAimBonus;
+    // additional heuristics could be added (recent shots, noise)
+    return score;
   }
 
+  /* ============== TARGET SELECTION ============== */
   function scoreTarget(enemy) {
     const player = getPlayer();
     const head = getHeadPos(enemy);
     if (!head) return { score: -Infinity, dist: Infinity };
     const dist = distanceBetween(player, head);
     let score = 0;
-    if (enemy.isAimingAtYou) score += CONFIG.dangerAimBonus;
-    score -= dist * 2.0;
+    score += dangerScore(enemy);
+    score -= dist * 2.0; // prefer closer
     if (enemy.health && enemy.health < 30) score += 300;
     if (!enemy.isVisible) score -= 2000;
+    // prefer enemies moving toward you slightly
+    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
+    const speed = Math.sqrt((vel.x||0)*(vel.x||0) + (vel.y||0)*(vel.y||0) + (vel.z||0)*(vel.z||0));
+    if (speed > 1.0) score += 50;
     return { score, dist };
   }
 
@@ -164,54 +301,142 @@
     return best ? best.enemy : null;
   }
 
-  function willPeekSoon(enemy) {
-    if (!enemy) return false;
-    if (enemy.isAtCoverEdge || enemy.peekIntent) return true;
-    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
-    const speed = Math.sqrt(vel.x * vel.x + vel.y * vel.y + vel.z * vel.z);
-    if (speed < 0.15 && (enemy.priorSpeed && enemy.priorSpeed > 0.5)) return true;
-    return Math.random() < 0.08;
+  /* ============== ENGAGEMENT PIPELINE ============== */
+
+  // Attempt to compute final aim position for target: prediction, comp, stickiness, beam smooth, lag comp, wall offset
+  function computeAimPosition(target) {
+    if (!target) return null;
+    // 1) Predict where head will be (head-turn prediction)
+    const predHead = predictHeadTurn(target, CONFIG.headTurnPredictionMs) || getHeadPos(target);
+    // 2) Weapon projectile compensation (overrides prediction if proj speed known)
+    let aim = applyWeaponCompensation(target) || predHead || getHeadPos(target);
+    // 3) Burst compensation if firing multi-bullet
+    aim = trackBurst(target, STATE.bulletIndex || 0) || aim;
+    // 4) Lag compensation
+    aim = applyLagComp(aim, target) || aim;
+    // 5) Stickiness logic (if we were recently locked keep aim)
+    aim = applyStickiness(target, aim) || aim;
+    // 6) Avoid walls (offset if raycast indicates wall)
+    aim = avoidWallOffset(target, aim) || aim;
+    // 7) Beam smoothing for human-like motion
+    aim = applyBeamMode(aim) || aim;
+    return aim;
   }
 
+  // human-swipe assist: if near head and not exactly center, finish the swipe
+  function humanSwipeAssist(target) {
+    if (!target) return null;
+    try {
+      if (crosshairIsNearHead(target, CONFIG.humanSwipeThresholdPx) && !crosshairIsNearHead(target, 2)) {
+        return getHeadPos(target);
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // Will attempt to auto fire if predicted to hit (accelerated when crosshair near head)
+  function attemptAutoFire(target, aimPos) {
+    try {
+      if (!aimPos) return;
+      // if crosshair is very near final aim pos -> fire
+      if (crosshairIsNearHead(target, Math.max(8, CONFIG.crosshairNearThresholdPx))) {
+        if (CONFIG.instantFireIfHeadLocked) {
+          fireNow();
+          return;
+        }
+      }
+      // AutoFireLead: check predicted path and fire earlier for moving targets
+      const headFuture = predictPosition(target, CONFIG.autoFireLeadMs);
+      if (headFuture && crosshairIsNearHead(target, CONFIG.stickinessPx)) {
+        fireNow();
+        return;
+      }
+    } catch (e) {}
+  }
+
+  // core engage function
   function engageTarget(target) {
     if (!target) return;
     const head = getHeadPos(target);
     if (!head) return;
     const player = getPlayer();
     const dist = distanceBetween(player, head);
-    let aimPos = applyWeaponCompensation(head, target) || head;
+    // compute aim pos pipeline
+    let aimPos = computeAimPosition(target) || head;
+
+    // if within close range -> instant snap + immediate fire
     if (dist <= CONFIG.closeRangeMeters) {
-      instantAimAt(aimPos);
+      if (CONFIG.instantSnapDivisor <= 1.01) instantAimAt(aimPos);
+      else smoothAimAt(aimPos, CONFIG.instantSnapDivisor);
       if (CONFIG.instantFireIfHeadLocked) {
-        fireNow();
+        attemptAutoFire(target, aimPos);
       }
       return;
     }
+
+    // pre-fire logic
     if (dist <= CONFIG.preFireRange && willPeekSoon(target)) {
       const prePos = predictPosition(target, CONFIG.preFireLeadMs) || aimPos;
-      instantAimAt(prePos);
+      if (CONFIG.instantSnapDivisor <= 1.01) instantAimAt(prePos);
+      else smoothAimAt(prePos, CONFIG.instantSnapDivisor);
       fireNow();
       return;
     }
+
+    // standard aim: either instant snap or smoothed
     if (CONFIG.instantSnapDivisor <= 1.01) {
       instantAimAt(aimPos);
     } else {
-      const current = crosshairPos();
-      const next = { x: current.x + (aimPos.x - current.x) / CONFIG.instantSnapDivisor, y: current.y + (aimPos.y - current.y) / CONFIG.instantSnapDivisor };
-      setCrosshair(next);
+      smoothAimAt(aimPos, CONFIG.instantSnapDivisor);
     }
-    if (CONFIG.burstCompEnabled && typeof game !== 'undefined' && typeof game.autoAdjustSpray === 'function') {
-      game.autoAdjustSpray(aimPos, CONFIG.burstCompFactor);
-    }
-    if (crosshairIsNearHead(target, 8)) {
-      fireNow();
-    } else {
-      if (typeof game !== 'undefined' && typeof game.microCorrect === 'function') {
-        game.microCorrect(aimPos);
+
+    // burst / spray compensation hook if game exposes it
+    try {
+      if (CONFIG.burstCompEnabled && typeof game !== 'undefined' && typeof game.autoAdjustSpray === 'function') {
+        game.autoAdjustSpray(aimPos, CONFIG.burstCompFactor);
       }
+    } catch (e) {}
+
+    // micro corrections
+    if (CONFIG.microCorrectionEnabled && typeof game !== 'undefined' && typeof game.microCorrect === 'function') {
+      try { game.microCorrect(aimPos); } catch (e) {}
     }
+
+    // try to fire when near target
+    attemptAutoFire(target, aimPos);
   }
 
+  /* ============== AIM MOVEMENT HELPERS ============== */
+  function instantAimAt(pos) {
+    if (!pos) return;
+    try {
+      setCrosshair({ x: pos.x, y: pos.y });
+    } catch (e) {}
+  }
+
+  function smoothAimAt(pos, divisor = 3.0) {
+    try {
+      if (!pos) return;
+      const current = crosshairPos();
+      const next = {
+        x: current.x + (pos.x - current.x) / divisor,
+        y: current.y + (pos.y - current.y) / divisor
+      };
+      setCrosshair(next);
+    } catch (e) {}
+  }
+
+  /* ============== AUX DETECTION ============== */
+  function willPeekSoon(enemy) {
+    if (!enemy) return false;
+    if (enemy.isAtCoverEdge || enemy.peekIntent) return true;
+    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
+    const speed = Math.sqrt((vel.x||0)*(vel.x||0) + (vel.y||0)*(vel.y||0) + (vel.z||0)*(vel.z||0));
+    if (speed < 0.15 && (enemy.priorSpeed && enemy.priorSpeed > 0.5)) return true;
+    return Math.random() < 0.12; // slightly higher chance
+  }
+
+  /* ============== MAIN LOOP ============== */
   function tick() {
     try {
       const enemies = getEnemies();
@@ -219,19 +444,31 @@
       const target = chooseTarget(enemies);
       if (!target) return;
       engageTarget(target);
-    } catch (e) {}
+    } catch (e) {
+      // swallow all errors to avoid breaking host page
+      try { console.debug('[AutoHeadlockProMax] tick error', e); } catch (e2) {}
+    }
   }
 
+  /* ============== BOOT ============== */
   function init() {
     try {
+      // try to wire basic game events if present
       if (window.game && typeof game.on === 'function') {
-        try { game.on('playerDamaged', () => { STATE.lastShotAt = now(); }); } catch (e) {}
-        try { game.on('youWereShot', () => { STATE.lastShotAt = now(); }); } catch (e) {}
+        try { game.on('playerDamaged', () => { STATE.lastShotAt = now(); STATE.bulletIndex = 0; }); } catch (e) {}
+        try { game.on('youWereShot', () => { STATE.lastShotAt = now(); STATE.bulletIndex = 0; }); } catch (e) {}
+        try { game.on('weaponFired', () => { STATE.bulletIndex = (STATE.bulletIndex || 0) + 1; }); } catch (e) {}
       }
     } catch (e) {}
-    setInterval(tick, CONFIG.tickIntervalMs);
-    console.log('[AutoHeadlockProMax v14.4] HumanBreaker FullPower FIXED loaded.');
+
+    // run main loop
+    try {
+      setInterval(tick, CONFIG.tickIntervalMs);
+    } catch (e) {}
+    console.log('[AutoHeadlockProMax v15.0] NoEscape-GodMode FullPower loaded.');
   }
 
+  // Kick off
   init();
+
 })();
