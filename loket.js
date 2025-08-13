@@ -1,372 +1,186 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v14.4-HumanBreaker-FullPower
-// @version      14.4
-// @description  FULL POWER: instant head snap + pre-fire + overtrack + weapon compensation + burst handling. No fake-swipe, max aggression.
+// @name         AutoHeadlockProMax v15.0-NoEscape-GodMode
+// @version      15.0
+// @description  God-level headshot lock: AI Head Turn Prediction, Magnetic Lock, Wall Avoidance, Multi-Bullet Tracking, Danger Priority, Human Swipe Override, Auto Fire, Lag Compensation, Magnetic Beam
 // @match        *://*/*
 // @run-at       document-start
 // ==/UserScript==
 
 (() => {
-  /* ============== CONFIG ============== */
-const CONFIG = {
-    // Modes
-    mode: 'fullpower', // fullpower only
-    // Distances (meters)
-    closeRangeMeters: Number.MAX_SAFE_INTEGER,      // [FIX] dùng số an toàn
-    preFireRange: Number.MAX_SAFE_INTEGER,
-    maxEngageDistance: Number.MAX_SAFE_INTEGER,
-    // Aim power & smoothing
-    instantSnapDivisor: 1.0,
-    overtrackLeadFactor: Number.MAX_SAFE_INTEGER,
-    // Weapon compensation profiles
-    weaponProfiles: {
-      default: { recoilX: 0, recoilY: 0, spreadComp: 1.0, projectileSpeed: Number.MAX_SAFE_INTEGER },
-      MP40:    { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: Number.MAX_SAFE_INTEGER },
-      M1014:   { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: Number.MAX_SAFE_INTEGER },
-      Vector:  { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: Number.MAX_SAFE_INTEGER }
-    },
-    // Pre-fire tuning
-    preFireLeadMs: 0,
-    // Multi-bullet (burst) handling
-    burstCompEnabled: true,
-    burstCompFactor: Number.MAX_SAFE_INTEGER,
-    // Misc
-    tickIntervalMs: 0,
-    instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 0,
-    tickIntervalMs_alt: 0, // [FIX] key mới tránh override
-    predictMs: Number.MAX_SAFE_INTEGER,
-    overtrackLeadFactor_alt: Number.MAX_SAFE_INTEGER, // [FIX] key mới tránh override
-    bulletDropFactor: 0,
-    headYOffsetPx: 0,
-    instantFireIfHeadLocked_alt: true, // [FIX] key mới tránh override
-    fireBurstCount: Number.MAX_SAFE_INTEGER,
-     headTurnPredictionMs: 150,   // 50–200ms dự đoán quay đầu
-    stickinessPx: 4,              // khoảng cách pixel để kích hoạt lực hút
-    stickinessHoldMs: 180,        // giữ lock khi mất line-of-sight
-    wallOffsetPx: 6,              // dịch aim khi gặp tường
-    multiBulletWeapons: ['MP40', 'Vector', 'M1014'],
-    recoilCompPerBullet: 0.5,     // % bù recoil cho từng viên
-    dangerAimBonus: 5000,         // điểm cộng khi địch ngắm bạn
-    humanSwipeThresholdPx: 12,    // khoảng cách để AI kéo nốt
-    autoFireLeadMs: 120,          // bắn đón sớm
-    lagCompensation: true,        // bật bù lag
-    magneticBeamSmooth: 0.2       // hệ số mượt của beam mode
-  };
-
-  /* ============== STATE ============== */
-  let STATE = {
-    lastShotAt: 0,
-    sessionAimPower: Number.MAX_SAFE_INTEGER,
-    lastTargetId: null,
-    hits: Number.MAX_SAFE_INTEGER,
-    misses: 0
-  };
-
-  // [FIX] Đổi tên hàm gốc để tránh bị ghi đè sau
-  function _getPlayerBase() {
-    return window.player || { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0 };
-  }
-
-  function getEnemies() {
-    return (window.game && game.enemies) ? game.enemies : [];
-  }
-
-  function getHead(enemy) {
-    if (!enemy) return null;
-    if (typeof enemy.getBone === 'function') {
-      try { return enemy.getBone('head'); } catch (e) {}
-    }
-    return enemy.head || enemy.position || null;
-  }
-
-  function distance(a, b) {
-    if (!a || !b) return Infinity; // [FIX]
-    const dx = (a.x || 0) - (b.x || 0);
-    const dy = (a.y || 0) - (b.y || 0);
-    const dz = (a.z || 0) - (b.z || 0);
-    return Math.sqrt(dx * dx + dy * dy + dz * dz);
-  }
-
-  function predictHeadPosition(head, enemy) {
-    if (!head || !enemy) return null; // [FIX]
-    return {
-      x: head.x + (enemy.vx || 0) * (CONFIG.predictMs / 1000) * CONFIG.overtrackLeadFactor,
-      y: head.y + (enemy.vy || 0) * (CONFIG.predictMs / 1000) * CONFIG.overtrackLeadFactor,
-      z: head.z + (enemy.vz || 0) * (CONFIG.predictMs / 1000) * CONFIG.overtrackLeadFactor
+    /* ================= CONFIG ================= */
+    const CONFIG = {
+        aimFov: 75,                // Góc FOV lock (độ)
+        predictionTime: 0.15,      // Dự đoán hướng đầu (giây)
+        stickinessPx: 3,           // Khoảng cách px để kích hoạt Magnetic Lock
+        wallOffsetPx: 6,           // Dịch aim khi có vật cản
+        recoilCompFactor: 0.85,    // Hệ số bù giật
+        dangerSwitchDelay: 0.05,   // Thời gian đổi target khi có mối nguy
+        humanSwipeAssist: 0.2,     // % khoảng cách còn lại AI sẽ hoàn tất
+        preFireLeadTime: 0.08,     // Thời gian bắn đón (giây)
+        lagCompFactor: 1.0,        // Hệ số bù ping
+        beamSmoothFactor: 0.12,    // Độ mượt beam mode
+        debug: false               // Bật console debug
     };
-  }
 
-  /* ============== ADAPTER HELPERS (Replace per Engine) ============== */
-  function now() { return Date.now(); }
+    /* ================= CORE STATE ================= */
+    let currentTarget = null;
+    let lastShotTime = 0;
+    let ping = 0; // sẽ được cập nhật runtime
 
-  function getPlayer() {
-    return window.player || { x:0, y:0, z:0, hp:100, isAiming:false, weapon:{name:'default'} };
-  }
+    /* ================== MODULES ================== */
 
-  function getEnemies() {
-    return (window.game && game.enemies) ? game.enemies : [];
-  }
-
-  function distanceBetween(a, b) {
-    if (!a || !b) return Infinity; // [FIX]
-    const dx = (a.x||0) - (b.x||0);
-    const dy = (a.y||0) - (b.y||0);
-    const dz = ((a.z||0) - (b.z||0));
-    return Math.sqrt(dx*dx + dy*dy + dz*dz);
-  }
-  function predictHeadTurn(enemy, msAhead = NOESCAPE_CONFIG.headTurnPredictionMs) {
-    const head = getHeadPos(enemy);
-    if (!head) return null;
-    const vel = enemy.velocity || {x:0, y:0, z:0};
-    const view = enemy.viewDir || {x:0, y:0, z:0}; // hướng nhìn
-    return {
-        x: head.x + (vel.x + view.x) * (msAhead / 1000),
-        y: head.y + (vel.y + view.y) * (msAhead / 1000),
-        z: head.z + (vel.z + view.z) * (msAhead / 1000)
-    };
-}
-  let lastLockTime = 0;
-function applyStickiness(enemy) {
-    if (crosshairIsNearHead(enemy, NOESCAPE_CONFIG.stickinessPx)) {
-        lastLockTime = now();
-        return getHeadPos(enemy);
+    /** 1. AI Head Turn Prediction 2D + 3D */
+    function predictHeadPosition(enemy) {
+        const velocity = enemy.velocity;
+        const viewDir = enemy.viewDir;
+        const predictedPos = {
+            x: enemy.headPos.x + (velocity.x + viewDir.x) * CONFIG.predictionTime,
+            y: enemy.headPos.y + (velocity.y + viewDir.y) * CONFIG.predictionTime,
+            z: enemy.headPos.z + (velocity.z + viewDir.z) * CONFIG.predictionTime
+        };
+        return predictedPos;
     }
-    if (!enemy.isVisible && now() - lastLockTime < NOESCAPE_CONFIG.stickinessHoldMs) {
-        return getHeadPos(enemy);
+
+    /** 2. Quantum Stickiness (Magnetic Lock) */
+    function applyMagneticLock(aimPos, headPos) {
+        const dx = aimPos.x - headPos.x;
+        const dy = aimPos.y - headPos.y;
+        const dz = aimPos.z - headPos.z;
+        const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        return (dist <= CONFIG.stickinessPx) ? headPos : aimPos;
     }
-    return null;
-}
-function avoidWallOffset(enemy) {
-    if (!window.game || typeof game.raycast !== 'function') return getHeadPos(enemy);
-    const player = getPlayer();
-    const head = getHeadPos(enemy);
-    if (!head) return null;
-    if (game.raycast(player, head).hitWall) {
-        return { x: head.x + NOESCAPE_CONFIG.wallOffsetPx, y: head.y, z: head.z };
+
+    /** 3. Wall Avoidance Auto-Offset */
+    function applyWallAvoidance(startPos, targetPos) {
+        if (raycastHasObstacle(startPos, targetPos)) {
+            return {
+                x: targetPos.x + CONFIG.wallOffsetPx,
+                y: targetPos.y,
+                z: targetPos.z
+            };
+        }
+        return targetPos;
     }
-    return head;
-}
-function trackBurst(enemy, bulletIndex) {
-    const head = getHeadPos(enemy);
-    if (!head) return null;
-    const w = getPlayer().weapon?.name || 'default';
-    if (!NOESCAPE_CONFIG.multiBulletWeapons.includes(w)) return head;
-    const recoilAdj = bulletIndex * NOESCAPE_CONFIG.recoilCompPerBullet;
-    return { x: head.x, y: head.y - recoilAdj, z: head.z };
-}
-function dangerScore(enemy) {
-    let score = 0;
-    if (enemy.isAimingAtYou) score += NOESCAPE_CONFIG.dangerAimBonus;
-    return score;
-}
-function humanSwipeAssist(enemy) {
-    if (crosshairIsNearHead(enemy, NOESCAPE_CONFIG.humanSwipeThresholdPx) &&
-        !crosshairIsNearHead(enemy, 2)) {
-        return getHeadPos(enemy); // kéo nốt
+
+    /** 4. Multi-Bullet Burst Tracking */
+    function burstTrack(weapon, bulletIndex, headPos) {
+        const spread = weapon.spreadPattern[bulletIndex] || {x:0, y:0, z:0};
+        return {
+            x: headPos.x - spread.x * CONFIG.recoilCompFactor,
+            y: headPos.y - spread.y * CONFIG.recoilCompFactor,
+            z: headPos.z - spread.z * CONFIG.recoilCompFactor
+        };
     }
-    return null;
-}
-function autoFireLead(enemy) {
-    const headFuture = predictPosition(enemy, NOESCAPE_CONFIG.autoFireLeadMs);
-    if (headFuture && crosshairIsNearHead(enemy, NOESCAPE_CONFIG.stickinessPx)) {
-        fireNow();
+
+    /** 5. Danger Priority AI */
+    function selectDangerTarget(enemies) {
+        return enemies.sort((a, b) => {
+            const scoreA = (a.isAimingAtYou ? 2 : 0) - distanceToPlayer(a);
+            const scoreB = (b.isAimingAtYou ? 2 : 0) - distanceToPlayer(b);
+            return scoreB - scoreA;
+        })[0] || null;
     }
-}
-function applyLagComp(pos, enemy) {
-    if (!NOESCAPE_CONFIG.lagCompensation) return pos;
-    const ping = game?.network?.ping || 0;
-    const vel = enemy.velocity || {x:0, y:0, z:0};
-    return {
-        x: pos.x + vel.x * (ping / 1000),
-        y: pos.y + vel.y * (ping / 1000),
-        z: pos.z + vel.z * (ping / 1000)
-    };
-}
-let lastBeamPos = null;
-function applyBeamMode(pos) {
-    if (!lastBeamPos) {
-        lastBeamPos = pos;
-        return pos;
+
+    /** 6. Human Swipe Override */
+    function assistSwipe(currentAim, targetAim) {
+        const dx = targetAim.x - currentAim.x;
+        const dy = targetAim.y - currentAim.y;
+        const dz = targetAim.z - currentAim.z;
+        const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+        if (dist / CONFIG.stickinessPx <= CONFIG.humanSwipeAssist) {
+            return targetAim;
+        }
+        return currentAim;
     }
-    return {
-        x: lastBeamPos.x + (pos.x - lastBeamPos.x) * NOESCAPE_CONFIG.magneticBeamSmooth,
-        y: lastBeamPos.y + (pos.y - lastBeamPos.y) * NOESCAPE_CONFIG.magneticBeamSmooth,
-        z: lastBeamPos.z + (pos.z - lastBeamPos.z) * NOESCAPE_CONFIG.magneticBeamSmooth
-    };
-}
 
-
-
-  function getHeadPos(enemy) {
-    if (!enemy) return null;
-    if (typeof enemy.getBone === 'function') {
-      try { return enemy.getBone('head'); } catch(e) { return null; }
+    /** 7. Auto Fire Logic v3 */
+    function shouldAutoFire(player, enemy) {
+        const predicted = predictHeadPosition(enemy);
+        return willCrosshairAlign(player.aimPos, predicted, CONFIG.preFireLeadTime);
     }
-    return enemy.head || enemy.position || null;
-  }
 
-  function crosshairPos() {
-    return (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x:0, y:0 };
-  }
-
-  function setCrosshair(pos) {
-    if (!pos) return; // [FIX]
-    if (window.game && game.crosshair) {
-      game.crosshair.x = pos.x;
-      game.crosshair.y = pos.y;
+    /** 8. Lag Compensation */
+    function applyLagCompensation(headPos) {
+        const lagAdjust = ping / 1000 * CONFIG.lagCompFactor;
+        return {
+            x: headPos.x + headPos.vx * lagAdjust,
+            y: headPos.y + headPos.vy * lagAdjust,
+            z: headPos.z + headPos.vz * lagAdjust
+        };
     }
-  }
 
-  function fireNow() {
-    if (window.game && typeof game.fire === 'function') {
-      game.fire();
-      STATE.lastShotAt = now();
+    /** 9. Crosshair Magnetic Beam Mode */
+    function smoothAim(currentAim, targetAim) {
+        return {
+            x: currentAim.x + (targetAim.x - currentAim.x) * CONFIG.beamSmoothFactor,
+            y: currentAim.y + (targetAim.y - currentAim.y) * CONFIG.beamSmoothFactor,
+            z: currentAim.z + (targetAim.z - currentAim.z) * CONFIG.beamSmoothFactor
+        };
     }
-  }
 
-  function predictPosition(enemy, msAhead=0) {
-    if (!enemy) return null;
-    const head = getHeadPos(enemy);
-    if (!head) return null; // [FIX]
-    if (typeof game !== 'undefined' && typeof game.predict === 'function') {
-      try { return game.predict(enemy, head, msAhead/1000); } catch(e) {}
+    /* ================= GAME LOOP ================= */
+    game.on('tick', () => {
+        const enemies = game.getEnemiesInFov(CONFIG.aimFov);
+        if (!enemies.length) return;
+
+        // Danger Priority
+        const target = selectDangerTarget(enemies);
+        if (!target) return;
+        currentTarget = target;
+
+        // Predict head movement
+        let headPos = predictHeadPosition(target);
+
+        // Lag Compensation
+        headPos = applyLagCompensation(headPos);
+
+        // Wall Avoidance
+        headPos = applyWallAvoidance(player.eyePos, headPos);
+
+        // Magnetic Lock
+        headPos = applyMagneticLock(player.aimPos, headPos);
+
+        // Human Swipe Assist
+        headPos = assistSwipe(player.aimPos, headPos);
+
+        // Beam smoothing
+        const smoothPos = smoothAim(player.aimPos, headPos);
+
+        // Apply aim
+        player.setAim(smoothPos);
+
+        // Auto fire
+        if (shouldAutoFire(player, target)) {
+            player.fire();
+        }
+    });
+
+    /* ============ HELPER FUNCTIONS ============ */
+    function raycastHasObstacle(start, end) {
+        // Placeholder – replace with real raycast
+        return false;
     }
-    const vel = enemy.velocity || { x:0, y:0, z:0 };
-    return {
-      x: head.x + vel.x * (msAhead/1000),
-      y: head.y + vel.y * (msAhead/1000),
-      z: (head.z || 0) + (vel.z || 0) * (msAhead/1000)
-    };
-  }
 
-  function applyWeaponCompensation(pos, enemy) {
-    if (!enemy) return pos; // [FIX]
-    const w = getPlayer().weapon ? getPlayer().weapon.name : 'default';
-    const prof = CONFIG.weaponProfiles[w] || CONFIG.weaponProfiles.default;
-    if (prof.projectileSpeed && prof.projectileSpeed < 1e6) {
-      const head = getHeadPos(enemy);
-      if (!head) return pos; // [FIX]
-      const dist = distanceBetween(getPlayer(), head);
-      const travelSecs = dist / prof.projectileSpeed;
-      const leadMs = travelSecs * 1000 * CONFIG.overtrackLeadFactor;
-      const p = predictPosition(enemy, leadMs);
-      if (p) return p;
+    function distanceToPlayer(enemy) {
+        const dx = enemy.pos.x - player.pos.x;
+        const dy = enemy.pos.y - player.pos.y;
+        const dz = enemy.pos.z - player.pos.z;
+        return Math.sqrt(dx*dx + dy*dy + dz*dz);
     }
-    const pDefault = predictPosition(enemy, 16 * CONFIG.overtrackLeadFactor);
-    return pDefault || getHeadPos(enemy);
-  }
 
-  function crosshairIsNearHead(enemy, thresholdPx=CONFIG.crosshairNearThresholdPx) {
-    const head = getHeadPos(enemy);
-    if (!head) return false; // [FIX]
-    const ch = crosshairPos();
-    const dx = ch.x - head.x, dy = ch.y - head.y;
-    return Math.sqrt(dx*dx + dy*dy) <= thresholdPx;
-  }
-
-  function instantAimAt(pos) {
-    if (!pos) return; // [FIX]
-    setCrosshair({ x: pos.x, y: pos.y });
-  }
-
-  /* ============== TARGET SELECTION ============== */
-  function scoreTarget(enemy) {
-    const player = getPlayer();
-    const head = getHeadPos(enemy);
-    if (!head) return {score:-Infinity, dist:Infinity};
-    const dist = distanceBetween(player, head);
-    let score = 0;
-    if (enemy.isAimingAtYou) score += 5000;
-    score -= dist * 2.0;
-    if (enemy.health && enemy.health < 30) score += 300;
-    if (!enemy.isVisible) score -= 2000;
-    return { score, dist };
-  }
-
-  function chooseTarget(enemies) {
-    let best = null, bestScore = -Infinity;
-    for (const e of enemies) {
-      const s = scoreTarget(e);
-      if (s.score > bestScore) { bestScore = s.score; best = { enemy:e, dist:s.dist }; }
+    function willCrosshairAlign(currentAim, targetAim, time) {
+        const futureAim = {
+            x: currentAim.x + (targetAim.x - currentAim.x) * time,
+            y: currentAim.y + (targetAim.y - currentAim.y) * time,
+            z: currentAim.z + (targetAim.z - currentAim.z) * time
+        };
+        return distanceVec(futureAim, targetAim) < CONFIG.stickinessPx;
     }
-    return best ? best.enemy : null;
-  }
 
-  /* ============== CORE ENGAGEMENT LOGIC ============== */
-  function engageTarget(target) {
-    if (!target) return;
-    const head = getHeadPos(target);
-    if (!head) return;
-    const player = getPlayer();
-    const dist = distanceBetween(player, head);
-    let aimPos = applyWeaponCompensation(head, target) || head;
-    if (dist <= CONFIG.closeRangeMeters) {
-      instantAimAt(aimPos);
-      if (CONFIG.instantFireIfHeadLocked) {
-        if (crosshairIsNearHead(target, 10)) fireNow();
-        else fireNow();
-      }
-      return;
+    function distanceVec(a, b) {
+        const dx = a.x - b.x;
+        const dy = a.y - b.y;
+        const dz = a.z - b.z;
+        return Math.sqrt(dx*dx + dy*dy + dz*dz);
     }
-    if (dist <= CONFIG.preFireRange && willPeekSoon(target)) {
-      const prePos = predictPosition(target, CONFIG.preFireLeadMs) || aimPos;
-      instantAimAt(prePos);
-      fireNow();
-      return;
-    }
-    const smoothDiv = CONFIG.instantSnapDivisor;
-    if (smoothDiv <= 1.01) {
-      instantAimAt(aimPos);
-    } else {
-      const current = crosshairPos();
-      const next = { x: current.x + (aimPos.x - current.x) / smoothDiv, y: current.y + (aimPos.y - current.y) / smoothDiv };
-      setCrosshair(next);
-    }
-    if (CONFIG.burstCompEnabled && typeof game !== 'undefined' && typeof game.autoAdjustSpray === 'function') {
-      game.autoAdjustSpray(aimPos, CONFIG.burstCompFactor);
-    }
-    if (crosshairIsNearHead(target, 8)) {
-      fireNow();
-    } else {
-      if (typeof game !== 'undefined' && typeof game.microCorrect === 'function') {
-        game.microCorrect(aimPos);
-      }
-    }
-  }
-
-  /* ============== AUX DETECTION ============== */
-  function willPeekSoon(enemy) {
-    if (!enemy) return false;
-    if (enemy.isAtCoverEdge || enemy.peekIntent) return true;
-    const vel = enemy.velocity || { x:0, y:0, z:0 };
-    const speed = Math.sqrt(vel.x*vel.x + vel.y*vel.y + vel.z*vel.z);
-    if (speed < 0.15 && (enemy.priorSpeed && enemy.priorSpeed > 0.5)) return true;
-    return Math.random() < 0.08;
-  }
-
-  /* ============== MAIN LOOP ============== */
-  function tick() {
-    try {
-      const enemies = getEnemies();
-      if (!enemies || enemies.length === 0) return;
-      const target = chooseTarget(enemies);
-      if (!target) return;
-      engageTarget(target);
-    } catch (e) {}
-  }
-
-  /* ============== BOOT ============== */
-  function init() {
-    try {
-      if (window.game && typeof game.on === 'function') {
-        try { game.on('playerDamaged', () => { STATE.lastShotAt = now(); }); } catch(e){}
-        try { game.on('youWereShot', () => { STATE.lastShotAt = now(); }); } catch(e){}
-      }
-    } catch(e){}
-    setInterval(tick, CONFIG.tickIntervalMs);
-    console.log('[AutoHeadlockProMax v14.4] HumanBreaker FullPower loaded.');
-  }
-
-  init();
 })();
