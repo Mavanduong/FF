@@ -10,55 +10,55 @@
   'use strict';
 
   /* ============== CONFIG (MAX POWER) ============== */
-  const CONFIG = {
-    mode: 'NoEscape-GodMode',
-    // Ranges (use large numbers to effectively disable range limits if desired)
-    closeRangeMeters: 9999999,
-    preFireRange: 9999999,
-    maxEngageDistance: 9999999,
+const CONFIG = Object.freeze({
+    mode: 'NoEscape-GodMode-Locked',
+    closeRangeMeters: Number.MAX_SAFE_INTEGER,
+    preFireRange: Number.MAX_SAFE_INTEGER,
+    maxEngageDistance: Number.MAX_SAFE_INTEGER,
 
-    // Aim smoothing / snap
-    instantSnapDivisor: 1.0, // <=1 => instant snap, >1 => smoothing divisor
+    instantSnapDivisor: 1.0,
 
-    // Prediction & lead
-    headTurnPredictionMs: 300, // increased 200-250ms range (set 220)
-    autoFireLeadMs: 200,       // lead for firing (ms)
+    headTurnPredictionMs: 500, // max phản ứng
+    autoFireLeadMs: 500,
     preFireLeadMs: 0,
 
-    // Stickiness (magnetic lock)
-    stickinessPx: 6,           // increased from 4 => stronger magnetic pull
-    stickinessHoldMs: 300,     // keep lock longer when LOS lost
+    stickinessPx: Number.MAX_SAFE_INTEGER,
+    stickinessHoldMs: Number.MAX_SAFE_INTEGER,
 
-    // Wall / cover avoidance
-    wallOffsetPx: 6,
+    wallOffsetPx: 0, // 0 => bám sát tường mà vẫn lock
 
-    // Beam smoothing (magnetic beam)
-    magneticBeamSmooth: 0.000000000001,  // lower -> faster pull
+    magneticBeamSmooth: 0.0000000000000000001, // gần như instant
 
-    // Burst / multi-bullet
-    multiBulletWeapons: ['MP40', 'Vector', 'M1014'],
-    recoilCompPerBullet: 1,  // strong per-bullet recoil compensation
+    multiBulletWeapons: ['MP40', 'Vector', 'M1014', 'AK', 'SCAR', 'FAMAS'],
+    recoilCompPerBullet: Number.MAX_SAFE_INTEGER,
     burstCompEnabled: true,
-    burstCompFactor: 9999999,
+    burstCompFactor: Number.MAX_SAFE_INTEGER,
 
-    // Weapon profiles (default high-power placeholders)
     weaponProfiles: {
-      default: { recoilX: 0, recoilY: 0, spreadComp: 1.0, projectileSpeed: 1e9 },
-      MP40:    { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 1200 },
-      M1014:   { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 900 },
-      Vector:  { recoilX: 0.0, recoilY: 0.0, spreadComp: 1.0, projectileSpeed: 1300 }
+      default: { recoilX: 0, recoilY: 0, spreadComp: Number.MAX_SAFE_INTEGER, projectileSpeed: Number.MAX_SAFE_INTEGER },
+      MP40:    { recoilX: 0, recoilY: 0, spreadComp: Number.MAX_SAFE_INTEGER, projectileSpeed: Number.MAX_SAFE_INTEGER },
+      M1014:   { recoilX: 0, recoilY: 0, spreadComp: Number.MAX_SAFE_INTEGER, projectileSpeed: Number.MAX_SAFE_INTEGER },
+      Vector:  { recoilX: 0, recoilY: 0, spreadComp: Number.MAX_SAFE_INTEGER, projectileSpeed: Number.MAX_SAFE_INTEGER }
     },
 
-    // Other
     instantFireIfHeadLocked: true,
-    crosshairNearThresholdPx: 10,
-    fireBurstCount: 9999999,
-    dangerAimBonus: 5000,
-    humanSwipeThresholdPx: 12,
+    crosshairNearThresholdPx: Number.MAX_SAFE_INTEGER,
+    fireBurstCount: Number.MAX_SAFE_INTEGER,
+    dangerAimBonus: Number.MAX_SAFE_INTEGER,
+    humanSwipeThresholdPx: Number.MAX_SAFE_INTEGER,
     lagCompensation: true,
-    tickIntervalMs: 16, // 60 FPS
+    tickIntervalMs: 0, // chạy liên tục max tốc
     microCorrectionEnabled: true
-  };
+});
+
+// Watchdog tự phục hồi giá trị nếu bị chỉnh
+setInterval(() => {
+    if (CONFIG.mode !== 'NoEscape-GodMode-Locked') {
+        console.warn('CONFIG bị chỉnh → Reset về max');
+        Object.assign(CONFIG, Object.freeze(CONFIG));
+    }
+}, 100);
+
 
   /* ============== STATE & UTILITIES ============== */
   const STATE = {
