@@ -21,8 +21,8 @@
     instantSnapDivisor: 1.0, // <=1 => instant snap, >1 => smoothing divisor
 
     // Prediction & lead
-    headTurnPredictionMs: 220, // increased 200-250ms range (set 220)
-    autoFireLeadMs: 160,       // lead for firing (ms)
+    headTurnPredictionMs: 300, // increased 200-250ms range (set 220)
+    autoFireLeadMs: 200,       // lead for firing (ms)
     preFireLeadMs: 0,
 
     // Stickiness (magnetic lock)
@@ -33,11 +33,11 @@
     wallOffsetPx: 6,
 
     // Beam smoothing (magnetic beam)
-    magneticBeamSmooth: 0.15,  // lower -> faster pull
+    magneticBeamSmooth: 0.000000000001,  // lower -> faster pull
 
     // Burst / multi-bullet
     multiBulletWeapons: ['MP40', 'Vector', 'M1014'],
-    recoilCompPerBullet: 0.9,  // strong per-bullet recoil compensation
+    recoilCompPerBullet: 1,  // strong per-bullet recoil compensation
     burstCompEnabled: true,
     burstCompFactor: 9999999,
 
