@@ -41,6 +41,17 @@ const CONFIG = {
     headYOffsetPx: 0,
     instantFireIfHeadLocked_alt: true, // [FIX] key mới tránh override
     fireBurstCount: Number.MAX_SAFE_INTEGER,
+     headTurnPredictionMs: 150,   // 50–200ms dự đoán quay đầu
+    stickinessPx: 4,              // khoảng cách pixel để kích hoạt lực hút
+    stickinessHoldMs: 180,        // giữ lock khi mất line-of-sight
+    wallOffsetPx: 6,              // dịch aim khi gặp tường
+    multiBulletWeapons: ['MP40', 'Vector', 'M1014'],
+    recoilCompPerBullet: 0.5,     // % bù recoil cho từng viên
+    dangerAimBonus: 5000,         // điểm cộng khi địch ngắm bạn
+    humanSwipeThresholdPx: 12,    // khoảng cách để AI kéo nốt
+    autoFireLeadMs: 120,          // bắn đón sớm
+    lagCompensation: true,        // bật bù lag
+    magneticBeamSmooth: 0.2       // hệ số mượt của beam mode
   };
 
   /* ============== STATE ============== */
@@ -104,6 +115,88 @@ const CONFIG = {
     const dz = ((a.z||0) - (b.z||0));
     return Math.sqrt(dx*dx + dy*dy + dz*dz);
   }
+  function predictHeadTurn(enemy, msAhead = NOESCAPE_CONFIG.headTurnPredictionMs) {
+    const head = getHeadPos(enemy);
+    if (!head) return null;
+    const vel = enemy.velocity || {x:0, y:0, z:0};
+    const view = enemy.viewDir || {x:0, y:0, z:0}; // hướng nhìn
+    return {
+        x: head.x + (vel.x + view.x) * (msAhead / 1000),
+        y: head.y + (vel.y + view.y) * (msAhead / 1000),
+        z: head.z + (vel.z + view.z) * (msAhead / 1000)
+    };
+}
+  let lastLockTime = 0;
+function applyStickiness(enemy) {
+    if (crosshairIsNearHead(enemy, NOESCAPE_CONFIG.stickinessPx)) {
+        lastLockTime = now();
+        return getHeadPos(enemy);
+    }
+    if (!enemy.isVisible && now() - lastLockTime < NOESCAPE_CONFIG.stickinessHoldMs) {
+        return getHeadPos(enemy);
+    }
+    return null;
+}
+function avoidWallOffset(enemy) {
+    if (!window.game || typeof game.raycast !== 'function') return getHeadPos(enemy);
+    const player = getPlayer();
+    const head = getHeadPos(enemy);
+    if (!head) return null;
+    if (game.raycast(player, head).hitWall) {
+        return { x: head.x + NOESCAPE_CONFIG.wallOffsetPx, y: head.y, z: head.z };
+    }
+    return head;
+}
+function trackBurst(enemy, bulletIndex) {
+    const head = getHeadPos(enemy);
+    if (!head) return null;
+    const w = getPlayer().weapon?.name || 'default';
+    if (!NOESCAPE_CONFIG.multiBulletWeapons.includes(w)) return head;
+    const recoilAdj = bulletIndex * NOESCAPE_CONFIG.recoilCompPerBullet;
+    return { x: head.x, y: head.y - recoilAdj, z: head.z };
+}
+function dangerScore(enemy) {
+    let score = 0;
+    if (enemy.isAimingAtYou) score += NOESCAPE_CONFIG.dangerAimBonus;
+    return score;
+}
+function humanSwipeAssist(enemy) {
+    if (crosshairIsNearHead(enemy, NOESCAPE_CONFIG.humanSwipeThresholdPx) &&
+        !crosshairIsNearHead(enemy, 2)) {
+        return getHeadPos(enemy); // kéo nốt
+    }
+    return null;
+}
+function autoFireLead(enemy) {
+    const headFuture = predictPosition(enemy, NOESCAPE_CONFIG.autoFireLeadMs);
+    if (headFuture && crosshairIsNearHead(enemy, NOESCAPE_CONFIG.stickinessPx)) {
+        fireNow();
+    }
+}
+function applyLagComp(pos, enemy) {
+    if (!NOESCAPE_CONFIG.lagCompensation) return pos;
+    const ping = game?.network?.ping || 0;
+    const vel = enemy.velocity || {x:0, y:0, z:0};
+    return {
+        x: pos.x + vel.x * (ping / 1000),
+        y: pos.y + vel.y * (ping / 1000),
+        z: pos.z + vel.z * (ping / 1000)
+    };
+}
+let lastBeamPos = null;
+function applyBeamMode(pos) {
+    if (!lastBeamPos) {
+        lastBeamPos = pos;
+        return pos;
+    }
+    return {
+        x: lastBeamPos.x + (pos.x - lastBeamPos.x) * NOESCAPE_CONFIG.magneticBeamSmooth,
+        y: lastBeamPos.y + (pos.y - lastBeamPos.y) * NOESCAPE_CONFIG.magneticBeamSmooth,
+        z: lastBeamPos.z + (pos.z - lastBeamPos.z) * NOESCAPE_CONFIG.magneticBeamSmooth
+    };
+}
+
+
 
   function getHeadPos(enemy) {
     if (!enemy) return null;
