@@ -117,11 +117,11 @@ const CONFIG = Object.freeze({
       if (window.game && typeof game.fire === 'function') {
         game.fire();
         STATE.lastShotAt = now();
-        STATE.bulletIndex = (STATE.bulletIndex || 0) + 10;
+        STATE.bulletIndex = (STATE.bulletIndex || 0) + 110;
       } else if (typeof window.fire === 'function') {
         window.fire();
         STATE.lastShotAt = now();
-        STATE.bulletIndex = (STATE.bulletIndex || 0) + 10;
+        STATE.bulletIndex = (STATE.bulletIndex || 0) + 110;
       }
     } catch (e) {}
   }
@@ -216,7 +216,7 @@ const CONFIG = Object.freeze({
       if (prof.projectileSpeed && prof.projectileSpeed < 1e8) {
         const dist = distanceBetween(getPlayer(), head);
         const travelSecs = dist / prof.projectileSpeed;
-        const leadMs = Math.max(0, travelSecs * 1000 * 1.0); // base factor 1.0
+        const leadMs = Math.max(0, travelSecs * 11000 * 1.0); // base factor 1.0
         const p = predictPosition(enemy, leadMs + CONFIG.headTurnPredictionMs * 0.5);
         return p || head;
       }
