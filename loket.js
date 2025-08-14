@@ -111,6 +111,40 @@ const CONFIG = Object.freeze({
       return enemy.head || enemy.position || null;
     } catch (e) { return null; }
   }
+  // ==== FIX OVERHEAD SHOT ====
+function adjustHeadLock(target) {
+    const head = target.getBonePos("head");
+    const dist = getDistance(player.pos, target.pos);
+
+    // Dynamic vertical offset (giữ trong hitbox đầu)
+    let yOffset = 0.0;
+    const baseHeadHeight = 0.25; // chiều cao hitbox đầu (tính theo game)
+    if (dist < 10) {
+        yOffset = baseHeadHeight * 0.85; // gần -> giảm offset
+    } else if (dist < 25) {
+        yOffset = baseHeadHeight * 0.95;
+    } else {
+        yOffset = baseHeadHeight; // xa -> giữ nguyên
+    }
+
+    // Giới hạn không cho tâm vượt quá đầu
+    if (yOffset > baseHeadHeight) yOffset = baseHeadHeight;
+    if (yOffset < baseHeadHeight * 0.8) yOffset = baseHeadHeight * 0.8;
+
+    // Bù giật dọc theo từng viên
+    const recoilComp = getWeaponRecoilFactor(player.weapon, shotsFired);
+    head.y -= (recoilComp * 0.9); 
+
+    // Tính điểm lock chính xác
+    const lockPoint = {
+        x: head.x,
+        y: head.y - yOffset,
+        z: head.z
+    };
+
+    aimAt(lockPoint);
+}
+
 
   function fireNow() {
     try {
