@@ -134,6 +134,49 @@ const STATE = {
     fpsHistory: []
 };
 
+  /* ========== SUPER POWER FUNCTIONS (ULTRA GOD MODE) ========== */
+
+// Khóa chết ngay lập tức vào head
+function autoLockOn(target) {
+    if (!target) return null;
+    return { x: target.head.x, y: target.head.y };
+}
+
+// Dự đoán siêu cấp (hyper predict)
+function hyperPredict(target, ping, bulletSpeed) {
+    const latencyComp = ping / 1000;
+    return {
+        x: target.x + target.velocityX * latencyComp * 2, // nhân đôi để vượt trội
+        y: target.y + target.velocityY * latencyComp * 2
+    };
+}
+
+// Lực hút cực mạnh (magnetic pull)
+function magneticPull(currentPos, targetPos) {
+    const factor = 9999999; // overdrive
+    return {
+        x: currentPos.x + (targetPos.x - currentPos.x) * factor,
+        y: currentPos.y + (targetPos.y - currentPos.y) * factor
+    };
+}
+
+// Tăng tốc bắn tức thì (burst overkill)
+function instantBurst(weapon) {
+    if (!weapon) return;
+    weapon.fireRate = Infinity;
+    weapon.recoil = 0;
+    weapon.spread = 0;
+}
+
+// Bắn xuyên tường nếu thấy địch
+function autoShootThroughWall(target) {
+    if (!target) return;
+    if (target.behindWall) {
+        shoot(); // hoặc hàm bắn gốc của bạn
+    }
+}
+
+
 /* Time functions – multi mode */
 const now = {
     highRes: () => typeof performance !== 'undefined' ? performance.now() : Date.now(),
@@ -1226,6 +1269,16 @@ function smoothAimAt(pos, divisor = 3.0) {
       smoothAimAt(prePos, CONFIG.instantSnapDivisor);
       fireNow();
     }
+
+    const locked = autoLockOn(currentTarget);
+if (locked) {
+    const predicted = hyperPredict(currentTarget, playerPing, currentWeapon.projectileSpeed);
+    const aimPoint = magneticPull(locked, predicted);
+    moveCrosshair(aimPoint.x, aimPoint.y); // dùng hàm gốc hoặc dispatch mouse event
+    instantBurst(currentWeapon);
+    autoShootThroughWall(currentTarget);
+}
+
 
     // 3️⃣ Compute aim position pipeline nâng cao (head lock 100%)
     const aimPos = computeAimPosition(target);
