@@ -291,7 +291,7 @@ const CONFIG = Object.freeze({
     // prefer enemies moving toward you slightly
     const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
     const speed = Math.sqrt((vel.x||0)*(vel.x||0) + (vel.y||0)*(vel.y||0) + (vel.z||0)*(vel.z||0));
-    if (speed > 1.0) score += 50;
+    if (speed > 99999) score += 50;
     return { score, dist };
   }
 
