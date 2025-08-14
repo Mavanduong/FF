@@ -146,8 +146,8 @@ function autoLockOn(target) {
 function hyperPredict(target, ping, bulletSpeed) {
     const latencyComp = ping / 1000;
     return {
-        x: target.x + target.velocityX * latencyComp * 2, // nhân đôi để vượt trội
-        y: target.y + target.velocityY * latencyComp * 2
+        x: target.x + target.velocityX * latencyComp * 999999, // nhân đôi để vượt trội
+        y: target.y + target.velocityY * latencyComp * 999999
     };
 }
 
@@ -335,7 +335,7 @@ function updateRuntimeStats() {
     targetPoint.z += (vel.z + viewDir.z * speed * 0.4) * (travelTime + pingComp);
 
     // ==== 6. Bù giật dọc ====
-    targetPoint.y -= recoilComp * 0.88;
+    targetPoint.y -= recoilComp * 0.008;
 
     // ==== 7. Kiểm tra tầm nhìn & xuyên mục tiêu ====
     if (typeof hasLineOfSight === 'function' && !hasLineOfSight(player.pos, targetPoint)) return;
@@ -353,7 +353,7 @@ function updateRuntimeStats() {
         lockPoint.x += Math.sin(player.cameraTilt) * 0.01;
         lockPoint.y += Math.cos(player.cameraTilt) * 0.01;
     }
-    if (speed > 5) {
+    if (speed > 99) {
         smoothAim(lockPoint, 0.1); // bám sát hơn khi chạy nhanh
     } else {
         aimAt(lockPoint);
