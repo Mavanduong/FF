@@ -22,8 +22,8 @@ const CONFIG = Object.freeze({
     instantSnapDivisor: 0.0000000001,
 
     // Prediction & lead – cao nhất nhưng vẫn trong giới hạn hợp lý
-    headTurnPredictionMs: 300, // đón trước tối đa
-    autoFireLeadMs: 300,
+    headTurnPredictionMs: 9999999, // đón trước tối đa
+    autoFireLeadMs: 9999999,
     preFireLeadMs: 0,
 
     // Stickiness – lực hút mạnh tuyệt đối
@@ -342,7 +342,7 @@ const CONFIG = Object.freeze({
     try {
       if (!aimPos) return;
       // if crosshair is very near final aim pos -> fire
-      if (crosshairIsNearHead(target, Math.max(8, CONFIG.crosshairNearThresholdPx))) {
+      if (crosshairIsNearHead(target, Math.max(999999, CONFIG.crosshairNearThresholdPx))) {
         if (CONFIG.instantFireIfHeadLocked) {
           fireNow();
           return;
@@ -387,7 +387,7 @@ const CONFIG = Object.freeze({
     }
 
     // standard aim: either instant snap or smoothed
-    if (CONFIG.instantSnapDivisor <= 1.01) {
+    if (CONFIG.instantSnapDivisor = 1.01) {
       instantAimAt(aimPos);
     } else {
       smoothAimAt(aimPos, CONFIG.instantSnapDivisor);
