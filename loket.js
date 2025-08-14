@@ -448,319 +448,849 @@ function updateRuntimeStats() {
 
 //chua sua 2
   // Beam smoothing to make motion look human and avoid abrupt jumps
-  function applyBeamMode(pos) {
-    if (!pos) return pos;
-    if (!STATE.lastBeamPos) {
-      STATE.lastBeamPos = { ...pos };
-      return pos;
-    }
-    const s = CONFIG.magneticBeamSmooth;
-    const next = {
-      x: STATE.lastBeamPos.x + (pos.x - STATE.lastBeamPos.x) * s,
-      y: STATE.lastBeamPos.y + (pos.y - STATE.lastBeamPos.y) * s,
-      z: (STATE.lastBeamPos.z || 0) + ((pos.z || 0) - (STATE.lastBeamPos.z || 0)) * s
-    };
-    STATE.lastBeamPos = next;
-    return next;
-  }
+  function applyBeamMode(pos, enemy) {
+  if (!pos) return pos;
 
-  // Avoid aiming into walls — offset aim if raycast detects wall between player and head
-  function avoidWallOffset(enemy, pos) {
-    try {
-      const head = pos || getHeadPos(enemy);
-      if (!head) return null;
-      if (window.game && typeof game.raycast === 'function') {
-        const player = getPlayer();
-        try {
-          const r = game.raycast(player, head);
-          if (r && r.hitWall) {
-            // push aim slightly to the side (wallOffsetPx) — choose sign depending on relative positions
-            const sign = ((head.x - (player.x || 0)) >= 0) ? 1 : -1;
-            return { x: head.x + sign * CONFIG.wallOffsetPx, y: head.y, z: head.z };
-          }
-        } catch (e) { /* ignore */ }
-      }
-    } catch (e) {}
+  // Lưu trạng thái ban đầu nếu chưa có
+  if (!STATE.lastBeamPos) {
+    STATE.lastBeamPos = { ...pos };
     return pos;
   }
 
+  // Dữ liệu mục tiêu
+  const vel = enemy?.velocity || { x: 0, y: 0, z: 0 };
+  const prevVel = enemy?.prevVelocity || vel;
+  const acc = {
+    x: vel.x - prevVel.x,
+    y: vel.y - prevVel.y,
+    z: (vel.z || 0) - (prevVel.z || 0)
+  };
+
+  // Khoảng cách giữa vị trí beam và mục tiêu
+  const dx = pos.x - STATE.lastBeamPos.x;
+  const dy = pos.y - STATE.lastBeamPos.y;
+  const dz = (pos.z || 0) - (STATE.lastBeamPos.z || 0);
+  const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+
+  // Adaptive smooth: xa thì beam nhanh, gần thì beam chậm để chính xác
+  let s = CONFIG.magneticBeamSmooth;
+  s = Math.min(1, Math.max(0.02, s + dist * 0.05));
+
+  // Predictive aim: dự đoán 50ms phía trước
+  const predictT = 0.05;
+  const predictedPos = {
+    x: pos.x + vel.x * predictT + 0.5 * acc.x * predictT * predictT,
+    y: pos.y + vel.y * predictT + 0.5 * acc.y * predictT * predictT,
+    z: (pos.z || 0) + (vel.z || 0) * predictT + 0.5 * acc.z * predictT * predictT
+  };
+
+  // Noise suppression: bỏ qua di chuyển <0.001 để giảm rung
+  const noiseThreshold = 0.001;
+  const targetPos = {
+    x: Math.abs(predictedPos.x - STATE.lastBeamPos.x) < noiseThreshold ? STATE.lastBeamPos.x : predictedPos.x,
+    y: Math.abs(predictedPos.y - STATE.lastBeamPos.y) < noiseThreshold ? STATE.lastBeamPos.y : predictedPos.y,
+    z: Math.abs(predictedPos.z - STATE.lastBeamPos.z) < noiseThreshold ? STATE.lastBeamPos.z : predictedPos.z
+  };
+
+  // Beam interpolation
+  const next = {
+    x: STATE.lastBeamPos.x + (targetPos.x - STATE.lastBeamPos.x) * s,
+    y: STATE.lastBeamPos.y + (targetPos.y - STATE.lastBeamPos.y) * s,
+    z: STATE.lastBeamPos.z + (targetPos.z - STATE.lastBeamPos.z) * s
+  };
+
+  STATE.lastBeamPos = next;
+  return next;
+}
+
+
+  // Avoid aiming into walls — offset aim if raycast detects wall between player and head
+function avoidWallOffset(enemy, pos) {
+  try {
+    const head = pos || getHeadPos(enemy);
+    if (!head) return null;
+
+    if (window.game && typeof game.raycast === 'function') {
+      const player = getPlayer();
+      if (!player) return pos;
+
+      // Kiểm tra thẳng
+      const directRay = game.raycast(player, head);
+      if (!directRay?.hitWall) return head; // Không bị tường chặn
+
+      let bestPos = head;
+      let minHitDist = Infinity;
+      const offsetCandidates = [
+        { x: CONFIG.wallOffsetPx, y: 0, z: 0 },
+        { x: -CONFIG.wallOffsetPx, y: 0, z: 0 },
+        { x: 0, y: CONFIG.wallOffsetPx, z: 0 },
+        { x: 0, y: -CONFIG.wallOffsetPx, z: 0 }
+      ];
+
+      for (const offset of offsetCandidates) {
+        const testPos = {
+          x: head.x + offset.x,
+          y: head.y + offset.y,
+          z: head.z + (offset.z || 0)
+        };
+        const ray = game.raycast(player, testPos);
+        if (ray && (!ray.hitWall || ray.distance < minHitDist)) {
+          minHitDist = ray.distance || 0;
+          bestPos = testPos;
+        }
+      }
+      return bestPos;
+    }
+  } catch (e) {}
+  return pos;
+}
+
+
   // For multi-bullet weapons, track recoil per bullet (adjust aim downward/upward accordingly)
   function trackBurst(enemy, bulletIndex = 0) {
-    const head = getHeadPos(enemy);
-    if (!head) return null;
-    const w = getPlayer().weapon ? getPlayer().weapon.name : 'default';
-    if (!CONFIG.multiBulletWeapons.includes(w)) return head;
-    const recoilAdj = bulletIndex * CONFIG.recoilCompPerBullet;
-    // apply a small vertical compensation (y axis or screen Y depending on engine)
-    return { x: head.x, y: head.y - recoilAdj, z: head.z };
-  }
+  const head = getHeadPos(enemy);
+  if (!head) return null;
+
+  const player = getPlayer();
+  const w = player?.weapon?.name || 'default';
+
+  // Không hỗ trợ multi-bullet thì trả về nguyên
+  if (!CONFIG.multiBulletWeapons.includes(w)) return head;
+
+  // Lấy pattern bù giật nếu có
+  const pattern = CONFIG.recoilPattern?.[w] || { x: 0, y: CONFIG.recoilCompPerBullet };
+  const verticalAdj = (pattern.y || CONFIG.recoilCompPerBullet) * bulletIndex;
+  const horizontalAdj = (pattern.x || 0) * bulletIndex;
+
+  // Tính offset mượt dần (EMA smoothing)
+  const smoothing = 0.6;
+  const prevAdj = STATE.lastRecoilAdj || { x: 0, y: 0 };
+  const newAdj = {
+    x: prevAdj.x + (horizontalAdj - prevAdj.x) * smoothing,
+    y: prevAdj.y + (verticalAdj - prevAdj.y) * smoothing
+  };
+
+  STATE.lastRecoilAdj = newAdj;
+
+  return {
+    x: head.x + newAdj.x,
+    y: head.y - newAdj.y, // Y giảm để bù giật lên
+    z: head.z
+  };
+}
+
 
   // Apply weapon projectile compensation if projectileSpeed is meaningful
-  function applyWeaponCompensation(enemy) {
-    const head = getHeadPos(enemy);
-    if (!head) return null;
-    try {
-      const w = getPlayer().weapon ? getPlayer().weapon.name : 'default';
-      const prof = CONFIG.weaponProfiles[w] || CONFIG.weaponProfiles.default;
-      if (prof.projectileSpeed && prof.projectileSpeed < 1e8) {
-        const dist = distanceBetween(getPlayer(), head);
-        const travelSecs = dist / prof.projectileSpeed;
-        const leadMs = Math.max(0, travelSecs * 11000 * 1.0); // base factor 1.0
-        const p = predictPosition(enemy, leadMs + CONFIG.headTurnPredictionMs * 0.5);
-        return p || head;
+function applyWeaponCompensation(enemy) {
+  const head = getHeadPos(enemy);
+  if (!head) return null;
+
+  try {
+    const player = getPlayer();
+    const w = player?.weapon?.name || 'default';
+    const prof = CONFIG.weaponProfiles[w] || CONFIG.weaponProfiles.default;
+
+    // Khoảng cách và vận tốc mục tiêu
+    const dist = distanceBetween(player, head);
+    const vel = enemy?.velocity || { x: 0, y: 0, z: 0 };
+    const prevVel = enemy?.prevVelocity || vel;
+    const acc = {
+      x: vel.x - prevVel.x,
+      y: vel.y - prevVel.y,
+      z: (vel.z || 0) - (prevVel.z || 0)
+    };
+
+    // Tính tốc độ đạn thực tế (hitscan gần như tức thì)
+    let projSpeed = prof.projectileSpeed || 999999999; 
+    if (projSpeed < 1e8 && projSpeed > 0) {
+      // Bù tốc độ đạn thấp bằng AI lead
+      const travelSecs = dist / projSpeed;
+      const baseLeadMs = travelSecs * 1000;
+
+      // Bù trễ mạng
+      const ping = Math.min(CONFIG.networkPingMs || (game?.network?.ping || 0), 300);
+      const lagCompMs = ping * 0.5;
+
+      // Dự đoán quay đầu + gia tốc
+      const predictionTime = baseLeadMs + CONFIG.headTurnPredictionMs * 0.6 + lagCompMs;
+      const predictedPos = predictPosition(enemy, predictionTime);
+
+      if (predictedPos) {
+        // Bù rơi đạn (nếu game có gravity)
+        if (prof.gravity) {
+          const drop = 0.5 * prof.gravity * Math.pow(travelSecs, 2);
+          predictedPos.z -= drop;
+        }
+        return predictedPos;
       }
-    } catch (e) {}
-    // fallback: head turn prediction + small world prediction
-    return predictPosition(enemy, CONFIG.headTurnPredictionMs) || head;
-  }
+    } else {
+      // Hitscan → chỉ cần head turn prediction + lag comp
+      const predictedPos = predictPosition(enemy, CONFIG.headTurnPredictionMs + (CONFIG.networkPingMs || 0) * 0.5);
+      return predictedPos || head;
+    }
+  } catch (e) {}
+
+  // fallback mạnh nhất
+  return predictPosition(enemy, CONFIG.headTurnPredictionMs) || head;
+}
+
 
   // Generic position predictor: velocity-based fallback if no engine predict()
-  function predictPosition(enemy, msAhead = 0) {
-    if (!enemy) return null;
-    const head = getHeadPos(enemy);
-    if (!head) return null;
-    try {
-      if (typeof game !== 'undefined' && typeof game.predict === 'function') {
-        try { return game.predict(enemy, head, msAhead / 1000); } catch (e) {}
-      }
-    } catch (e) {}
-    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
-    const t = (msAhead / 1000);
-    return {
-      x: head.x + (vel.x || 0) * t,
-      y: head.y + (vel.y || 0) * t,
-      z: (head.z || 0) + (vel.z || 0) * t
-    };
+function predictPosition(enemy, msAhead = 0) {
+  if (!enemy) return null;
+
+  const head = getHeadPos(enemy);
+  if (!head) return null;
+
+  try {
+    // Ưu tiên hàm predict gốc của game nếu có
+    if (typeof game !== 'undefined' && typeof game.predict === 'function') {
+      try {
+        return game.predict(enemy, head, msAhead / 1000);
+      } catch (e) {}
+    }
+  } catch (e) {}
+
+  // Dữ liệu di chuyển
+  const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
+  const prevVel = enemy.prevVelocity || vel;
+  const acc = {
+    x: vel.x - prevVel.x,
+    y: vel.y - prevVel.y,
+    z: (vel.z || 0) - (prevVel.z || 0)
+  };
+
+  // Dữ liệu hướng nhìn
+  const view = enemy.viewDir || { x: 0, y: 0, z: 0 };
+  const angularVel = enemy.angularVelocity || { x: 0, y: 0, z: 0 };
+
+  // Khoảng cách và adaptive time
+  const player = getPlayer ? getPlayer() : null;
+  const dist = player ? distanceBetween(player, head) : 0;
+  const baseT = (msAhead / 1000);
+  const adaptiveT = baseT + Math.min(dist / 10000, 0.3); // max +300ms
+
+  // Bù trễ mạng
+  const ping = Math.min(CONFIG.networkPingMs || (game?.network?.ping || 0) || 0, 500);
+  const t = adaptiveT + ping / 1000;
+
+  // Tính dự đoán vị trí
+  let predicted = {
+    x: head.x + vel.x * t + 0.5 * acc.x * t * t + view.x * 0.05 * t + angularVel.x * 0.02,
+    y: head.y + vel.y * t + 0.5 * acc.y * t * t + view.y * 0.05 * t + angularVel.y * 0.02,
+    z: (head.z || 0) + (vel.z || 0) * t + 0.5 * acc.z * t * t + (view.z || 0) * 0.02 * t
+  };
+
+  // Bù rơi đạn nếu có gravity
+  if (CONFIG.gravity) {
+    predicted.z -= 0.5 * CONFIG.gravity * (t * t);
   }
+
+  // Anti-overshoot: nếu nhảy quá xa thì giảm 50% dịch chuyển
+  if (STATE.lastPredictedPos) {
+    const dx = predicted.x - STATE.lastPredictedPos.x;
+    const dy = predicted.y - STATE.lastPredictedPos.y;
+    const dz = predicted.z - STATE.lastPredictedPos.z;
+    const distChange = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    if (distChange > dist * 0.5) {
+      predicted = {
+        x: STATE.lastPredictedPos.x + dx * 0.5,
+        y: STATE.lastPredictedPos.y + dy * 0.5,
+        z: STATE.lastPredictedPos.z + dz * 0.5
+      };
+    }
+  }
+
+  STATE.lastPredictedPos = predicted;
+  return predicted;
+}
+//666666
 
   /* ============== STICKINESS / MAGNETIC LOCK ============== */
-  function crosshairIsNearHead(enemy, thresholdPx = CONFIG.crosshairNearThresholdPx) {
-    const head = getHeadPos(enemy);
-    if (!head) return false;
-    const ch = crosshairPos();
-    // If head coords are in world-space, engine mapping to screen may be required; assume same system here
-    const dx = ch.x - head.x, dy = ch.y - head.y;
-    return Math.sqrt(dx * dx + dy * dy) <= thresholdPx;
+function crosshairIsNearHead(enemy, options = {}) {
+  const {
+    thresholdPx = CONFIG.crosshairNearThresholdPx, // ngưỡng mặc định
+    aimMode = 'head', // 'head', 'neck', 'chest', 'dynamic'
+    predictive = true, // bật dự đoán chuyển động
+    smoothing = true,  // aim mượt
+    dynamicScale = true // tăng threshold nếu enemy di chuyển nhanh
+  } = options;
+
+  const headPos = getHeadPos(enemy);
+  if (!headPos) return false;
+
+  let targetPos = { ...headPos };
+
+  // 1. Dynamic aim mode
+  if (aimMode === 'neck') {
+    targetPos.y += CONFIG.bodyPartOffset.neck;
+  } else if (aimMode === 'chest') {
+    targetPos.y += CONFIG.bodyPartOffset.chest;
+  } else if (aimMode === 'dynamic') {
+    // nếu enemy nhảy hoặc chạy nhanh thì aim vào ngực/ cổ để dễ trúng
+    const speed = enemySpeed(enemy);
+    if (speed > CONFIG.dynamicAimSpeedThreshold) {
+      targetPos.y += CONFIG.bodyPartOffset.chest;
+    } else {
+      targetPos = headPos;
+    }
   }
 
-  function applyStickiness(enemy, candidatePos) {
-    // If near head, update lastLockTime and return head pos to hold lock
-    try {
-      if (crosshairIsNearHead(enemy, CONFIG.stickinessPx)) {
-        STATE.lastLockTime = now();
-        return candidatePos || getHeadPos(enemy);
-      }
-      // If enemy lost visible but we recently had lock, keep it
-      if (!enemy.isVisible && (now() - STATE.lastLockTime) < CONFIG.stickinessHoldMs) {
-        return candidatePos || getHeadPos(enemy);
-      }
-    } catch (e) {}
-    return candidatePos;
+  // 2. Predictive aiming
+  if (predictive) {
+    const velocity = getEnemyVelocity(enemy);
+    const dist = distanceBetween(getPlayer(), targetPos);
+    const projSpeed = getWeaponProjectileSpeed(getPlayer().weapon);
+    const travelTime = dist / projSpeed;
+    targetPos.x += velocity.x * travelTime;
+    targetPos.y += velocity.y * travelTime;
   }
+
+  // 3. Crosshair position
+  const ch = crosshairPos();
+
+  // 4. Smoothing aim (nếu bật)
+  let dx = ch.x - targetPos.x;
+  let dy = ch.y - targetPos.y;
+  if (smoothing) {
+    dx *= CONFIG.smoothFactor;
+    dy *= CONFIG.smoothFactor;
+  }
+
+  // 5. Dynamic threshold scaling
+  let finalThreshold = thresholdPx;
+  if (dynamicScale) {
+    const speed = enemySpeed(enemy);
+    finalThreshold += speed * CONFIG.thresholdSpeedScale;
+  }
+
+  // 6. Khoảng cách thực tế
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  return distance <= finalThreshold;
+}
+
+
+function applyStickiness(enemy, candidatePos) {
+  try {
+    const pingMs = getCurrentPing ? getCurrentPing() : 50;
+    const headPos = getHeadPos(enemy);
+    const isNearHead = crosshairIsNearHead(enemy, CONFIG.stickinessPx);
+
+    // 1. Nếu gần đầu → lock ngay
+    if (isNearHead && headPos) {
+      STATE.lastLockTime = now();
+      STATE.lastKnownPos = headPos;
+      STATE.lastEnemyVel = getEnemyVelocity(enemy);
+      return candidatePos || headPos;
+    }
+
+    // 2. Nếu bị che hoặc mất lock nhưng vẫn trong thời gian giữ lock
+    const holdMs = CONFIG.stickinessHoldMs + (pingMs * CONFIG.pingHoldScale);
+    if ((now() - STATE.lastLockTime) < holdMs) {
+      if (STATE.lastKnownPos) {
+        // Bù ping bằng dự đoán vị trí đầu
+        const predictFactor = pingMs / 1000;
+        return {
+          x: STATE.lastKnownPos.x + (STATE.lastEnemyVel?.x || 0) * predictFactor,
+          y: STATE.lastKnownPos.y + (STATE.lastEnemyVel?.y || 0) * predictFactor
+        };
+      }
+      return candidatePos || headPos;
+    }
+
+    // 3. Nếu vừa tìm lại enemy sau khi mất lock → aim mượt về đầu
+    if (headPos && STATE.lastKnownPos) {
+      const smoothFactor = CONFIG.smoothFactor || 0.3;
+      return {
+        x: headPos.x * smoothFactor + STATE.lastKnownPos.x * (1 - smoothFactor),
+        y: headPos.y * smoothFactor + STATE.lastKnownPos.y * (1 - smoothFactor)
+      };
+    }
+
+  } catch (e) {
+    // Nếu có lỗi → vẫn trả về candidatePos để tránh crash
+  }
+  return candidatePos;
+}
+
 
   /* ============== RISK / DANGER SCORE ============== */
   function dangerScore(enemy) {
-    let score = 0;
-    if (enemy.isAimingAtYou) score += CONFIG.dangerAimBonus;
-    // additional heuristics could be added (recent shots, noise)
-    return score;
+  let score = 0;
+
+  // 1. Đang aim vào bạn
+  if (enemy.isAimingAtYou) score += CONFIG.dangerAimBonus;
+
+  // 2. Đang bắn
+  if (enemy.isShooting) score += CONFIG.dangerFireBonus;
+
+  // 3. Khoảng cách gần hơn → nguy hiểm hơn
+  const dist = distanceBetween(getPlayer(), enemy);
+  if (dist < CONFIG.closeRangeThreshold) {
+    score += CONFIG.dangerCloseBonus * (1 - dist / CONFIG.closeRangeThreshold);
   }
+
+  // 4. Vũ khí nguy hiểm (sniper, shotgun, AR mạnh)
+  if (enemy.weapon) {
+    if (CONFIG.highThreatWeapons.includes(enemy.weapon.name)) {
+      score += CONFIG.dangerWeaponBonus;
+    }
+  }
+
+  // 5. Đang di chuyển về phía bạn
+  const vel = getEnemyVelocity(enemy);
+  if (vel) {
+    const dirToYou = normalizeVector({
+      x: getPlayer().x - enemy.x,
+      y: getPlayer().y - enemy.y
+    });
+    const velNorm = normalizeVector(vel);
+    const movingTowards = dotProduct(dirToYou, velNorm);
+    if (movingTowards > CONFIG.movingTowardsThreshold) {
+      score += CONFIG.dangerApproachBonus * movingTowards;
+    }
+  }
+
+  // 6. Kill streak hoặc độ nguy hiểm trong game
+  if (enemy.killStreak && enemy.killStreak >= CONFIG.killStreakDangerThreshold) {
+    score += enemy.killStreak * CONFIG.dangerKillStreakMultiplier;
+  }
+
+  // 7. Ping thấp → nguy hiểm hơn
+  if (enemy.ping && enemy.ping < CONFIG.lowPingThreshold) {
+    score += CONFIG.dangerLowPingBonus;
+  }
+
+  return score;
+}
+
 
   /* ============== TARGET SELECTION ============== */
-  function scoreTarget(enemy) {
-    const player = getPlayer();
-    const head = getHeadPos(enemy);
-    if (!head) return { score: -Infinity, dist: Infinity };
-    const dist = distanceBetween(player, head);
-    let score = 0;
-    score += dangerScore(enemy);
-    score -= dist * 2.0; // prefer closer
-    if (enemy.health && enemy.health < 30) score += 300;
-    if (!enemy.isVisible) score -= 2000;
-    // prefer enemies moving toward you slightly
-    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
-    const speed = Math.sqrt((vel.x||0)*(vel.x||0) + (vel.y||0)*(vel.y||0) + (vel.z||0)*(vel.z||0));
-    if (speed > 99999) score += 50;
-    return { score, dist };
+function scoreTarget(enemy) {
+  const player = getPlayer();
+  const head = getHeadPos(enemy);
+  if (!head) return { score: -Infinity, dist: Infinity };
+
+  const dist = distanceBetween(player, head);
+  let score = 0;
+
+  // 1. Điểm nguy hiểm (đã nâng cấp)
+  score += dangerScore(enemy) * CONFIG.dangerWeight;
+
+  // 2. Ưu tiên gần hơn (tăng trọng số mạnh hơn)
+  score -= dist * CONFIG.distancePenalty; // ví dụ 5.0 để mạnh hơn
+
+  // 3. Máu thấp → bonus lớn
+  if (enemy.health && enemy.health < CONFIG.lowHpThreshold) {
+    score += CONFIG.lowHpBonus; // ví dụ 500 điểm
   }
 
-  function chooseTarget(enemies) {
-    let best = null, bestScore = -Infinity;
-    for (const e of enemies) {
-      const s = scoreTarget(e);
-      if (s.score > bestScore) { bestScore = s.score; best = { enemy: e, dist: s.dist }; }
-    }
-    return best ? best.enemy : null;
+  // 4. Phạt cực nặng nếu không thấy
+  if (!enemy.isVisible) {
+    score -= CONFIG.invisiblePenalty; // ví dụ 5000
   }
+
+  // 5. Di chuyển về phía bạn → bonus
+  const vel = getEnemyVelocity(enemy);
+  if (vel) {
+    const dirToYou = normalizeVector({
+      x: player.x - enemy.x,
+      y: player.y - enemy.y
+    });
+    const velNorm = normalizeVector(vel);
+    const movingTowards = dotProduct(dirToYou, velNorm);
+    if (movingTowards > CONFIG.movingTowardsThreshold) {
+      score += CONFIG.movingTowardsBonus * movingTowards;
+    }
+  }
+
+  // 6. Vũ khí nguy hiểm → bonus
+  if (enemy.weapon && CONFIG.highThreatWeapons.includes(enemy.weapon.name)) {
+    score += CONFIG.dangerWeaponBonus;
+  }
+
+  // 7. Kill streak cao → bonus
+  if (enemy.killStreak && enemy.killStreak >= CONFIG.killStreakDangerThreshold) {
+    score += enemy.killStreak * CONFIG.dangerKillStreakMultiplier;
+  }
+
+  // 8. Ping thấp → bonus
+  if (enemy.ping && enemy.ping < CONFIG.lowPingThreshold) {
+    score += CONFIG.dangerLowPingBonus;
+  }
+
+  // 9. Vừa bắn bạn → bonus lớn
+  if (enemy.recentlyShotYou) {
+    score += CONFIG.recentShotBonus; // ví dụ 800
+  }
+
+  return { score, dist };
+}
+
+
+function chooseTarget(enemies) {
+  if (!enemies || enemies.length === 0) return null;
+
+  const nowTime = now();
+  let best = null;
+  let bestScore = -Infinity;
+
+  for (const e of enemies) {
+    // Bỏ qua mục tiêu không hợp lệ
+    if (e.isDead || (!e.isVisible && (nowTime - (e.lastSeen || 0)) > CONFIG.maxLostTargetMs)) continue;
+
+    const s = scoreTarget(e);
+    let finalScore = s.score;
+
+    // Ưu tiên head-lock nếu crosshair gần đầu
+    if (crosshairIsNearHead(e, CONFIG.crosshairNearThresholdPx)) {
+      finalScore += CONFIG.headLockBonus; // ví dụ 300 điểm
+    }
+
+    // Giảm điểm nếu ping địch cao → khó predict
+    if (e.ping && e.ping > CONFIG.highPingThreshold) {
+      finalScore -= CONFIG.highPingPenalty;
+    }
+
+    // Giảm điểm nếu khoảng cách quá xa
+    if (s.dist > CONFIG.maxEngageDistance) {
+      finalScore -= CONFIG.distancePenaltyFar * (s.dist - CONFIG.maxEngageDistance);
+    }
+
+    // Nếu kẻ này đang bị bạn bắn hoặc đang aim vào bạn → boost
+    if (e.isAimingAtYou || e.recentlyShotYou) {
+      finalScore += CONFIG.threatImmediateBonus;
+    }
+
+    // So sánh để chọn mục tiêu tốt nhất
+    if (finalScore > bestScore) {
+      bestScore = finalScore;
+      best = { enemy: e, dist: s.dist, score: finalScore };
+    }
+  }
+
+  // Giữ lock ổn định (chỉ đổi nếu mục tiêu mới tốt hơn nhiều điểm)
+  if (STATE.currentTarget && best && best.enemy.id !== STATE.currentTarget.id) {
+    const currentScore = scoreTarget(STATE.currentTarget).score;
+    if (best.score < currentScore + CONFIG.targetSwitchThreshold) {
+      return STATE.currentTarget; // Giữ mục tiêu cũ
+    }
+  }
+
+  if (best) {
+    STATE.currentTarget = best.enemy;
+    return best.enemy;
+  }
+
+  return null;
+}
+
 
   /* ============== ENGAGEMENT PIPELINE ============== */
 
   // Attempt to compute final aim position for target: prediction, comp, stickiness, beam smooth, lag comp, wall offset
   function computeAimPosition(target) {
-    if (!target) return null;
-    // 1) Predict where head will be (head-turn prediction)
-    const predHead = predictHeadTurn(target, CONFIG.headTurnPredictionMs) || getHeadPos(target);
-    // 2) Weapon projectile compensation (overrides prediction if proj speed known)
-    let aim = applyWeaponCompensation(target) || predHead || getHeadPos(target);
-    // 3) Burst compensation if firing multi-bullet
-    aim = trackBurst(target, STATE.bulletIndex || 0) || aim;
-    // 4) Lag compensation
-    aim = applyLagComp(aim, target) || aim;
-    // 5) Stickiness logic (if we were recently locked keep aim)
-    aim = applyStickiness(target, aim) || aim;
-    // 6) Avoid walls (offset if raycast indicates wall)
-    aim = avoidWallOffset(target, aim) || aim;
-    // 7) Beam smoothing for human-like motion
-    aim = applyBeamMode(aim) || aim;
-    return aim;
+  if (!target) return null;
+
+  let aim = null;
+
+  // 1) Predict head position (advanced)
+  const predHead = predictHeadTurnAdvanced(target, CONFIG.headTurnPredictionMs) || getHeadPos(target);
+  aim = predHead;
+
+  // 2) Projectile compensation
+  const weaponAim = applyWeaponCompensation(target);
+  if (weaponAim) aim = weaponAim;
+
+  // 3) Burst compensation for multi-bullet weapons
+  const burstAim = trackBurstAdvanced(target, STATE.bulletIndex || 0);
+  if (burstAim) aim = burstAim;
+
+  // 4) Lag compensation (Max Ping)
+  const lagAim = applyLagCompMaxPing(aim, target);
+  if (lagAim) aim = lagAim;
+
+  // 5) Stickiness (Force Head Lock)
+  const stickyAim = applyStickinessForceHead(target, aim);
+  if (stickyAim) aim = stickyAim;
+
+  // 6) Wall avoidance
+  const safeAim = avoidWallOffsetSmart(target, aim);
+  if (safeAim) aim = safeAim;
+
+  // 7) Adaptive beam smoothing
+  const smoothedAim = applyBeamModeAdaptive(safeAim || aim, target);
+  if (smoothedAim) aim = smoothedAim;
+
+  // 8) VIP Target Correction (if dangerScore changes suddenly)
+  if (STATE.currentTarget && target.id === STATE.currentTarget.id) {
+    const danger = dangerScore(target);
+    if (danger > CONFIG.vipDangerThreshold) {
+      aim = adjustForVIPLock(aim, target);
+    }
   }
+
+  return aim;
+}
+
 
   // human-swipe assist: if near head and not exactly center, finish the swipe
   function humanSwipeAssist(target) {
     if (!target) return null;
     try {
-      if (crosshairIsNearHead(target, CONFIG.humanSwipeThresholdPx) && !crosshairIsNearHead(target, 2)) {
-        return getHeadPos(target);
-      }
-    } catch (e) {}
+        const nearHead = crosshairIsNearHead(target, CONFIG.humanSwipeThresholdPx);
+        const veryClose = crosshairIsNearHead(target, CONFIG.perfectLockPx || 2);
+
+        // 1. Nếu đang rất gần đầu → lock thẳng
+        if (nearHead && !veryClose) {
+            let aimPos = getHeadPos(target);
+
+            // 2. Thêm dự đoán hướng quay đầu để không bị hụt
+            const predicted = predictHeadTurn(target, CONFIG.headTurnPredictionMs);
+            if (predicted) {
+                aimPos = {
+                    x: (aimPos.x * 0.7) + (predicted.x * 0.3),
+                    y: (aimPos.y * 0.7) + (predicted.y * 0.3),
+                    z: (aimPos.z * 0.7) + (predicted.z * 0.3)
+                };
+            }
+
+            // 3. Thêm hiệu chỉnh theo vũ khí (đạn nhanh/chậm)
+            const compensated = applyWeaponCompensation(target);
+            if (compensated) aimPos = compensated;
+
+            // 4. Chống "giật aim" — di chuyển mượt hơn
+            aimPos = applyBeamMode(aimPos) || aimPos;
+
+            return aimPos;
+        }
+
+        // Nếu đã siêu gần (veryClose) thì trả vị trí đầu chuẩn
+        if (veryClose) {
+            return getHeadPos(target);
+        }
+
+    } catch (e) {
+        console.error("humanSwipeAssist error:", e);
+    }
     return null;
-  }
+}
+
 
   // Will attempt to auto fire if predicted to hit (accelerated when crosshair near head)
-  function attemptAutoFire(target, aimPos) {
-    try {
-      if (!aimPos) return;
-      // if crosshair is very near final aim pos -> fire
-      if (crosshairIsNearHead(target, Math.max(999999, CONFIG.crosshairNearThresholdPx))) {
-        if (CONFIG.instantFireIfHeadLocked) {
-          fireNow();
-          return;
-        }
-      }
-      // AutoFireLead: check predicted path and fire earlier for moving targets
-      const headFuture = predictPosition(target, CONFIG.autoFireLeadMs);
-      if (headFuture && crosshairIsNearHead(target, CONFIG.stickinessPx)) {
+function attemptAutoFire(target, aimPos) {
+  try {
+    if (!target || !aimPos) return;
+
+    // 1️⃣ Kiểm tra lock đầu tuyệt đối
+    const isPerfectLock = crosshairIsNearHead(target, CONFIG.crosshairNearThresholdPx);
+
+    if (isPerfectLock && CONFIG.instantFireIfHeadLocked) {
+      // Có thể thêm delay nhỏ để giả lập con người
+      if (CONFIG.humanFireDelayMs > 0) {
+        setTimeout(() => fireNow(), CONFIG.humanFireDelayMs);
+      } else {
         fireNow();
-        return;
-      }
-    } catch (e) {}
-  }
-
-  // core engage function
-  function engageTarget(target) {
-    if (!target) return;
-    const head = getHeadPos(target);
-    if (!head) return;
-    const player = getPlayer();
-    const dist = distanceBetween(player, head);
-    // compute aim pos pipeline
-    let aimPos = computeAimPosition(target) || head;
-
-    // if within close range -> instant snap + immediate fire
-    if (dist <= CONFIG.closeRangeMeters) {
-      if (CONFIG.instantSnapDivisor <= 1.01) instantAimAt(aimPos);
-      else smoothAimAt(aimPos, CONFIG.instantSnapDivisor);
-      if (CONFIG.instantFireIfHeadLocked) {
-        attemptAutoFire(target, aimPos);
       }
       return;
     }
 
-    // pre-fire logic
-    if (dist <= CONFIG.preFireRange && willPeekSoon(target)) {
-      const prePos = predictPosition(target, CONFIG.preFireLeadMs) || aimPos;
-      if (CONFIG.instantSnapDivisor <= 1.01) instantAimAt(prePos);
-      else smoothAimAt(prePos, CONFIG.instantSnapDivisor);
+    // 2️⃣ AutoFireLead cho mục tiêu di chuyển
+    const headFuture = predictPosition(target, CONFIG.autoFireLeadMs);
+    if (headFuture) {
+      const isNearFuturePos = distance2D(crosshairPos(), headFuture) <= CONFIG.stickinessPx;
+      if (isNearFuturePos) {
+        fireNow();
+        return;
+      }
+    }
+
+    // 3️⃣ Human Swipe Assist
+    const assistPos = humanSwipeAssist(target);
+    if (assistPos && distance2D(crosshairPos(), assistPos) <= CONFIG.stickinessPx) {
       fireNow();
       return;
     }
 
-    // standard aim: either instant snap or smoothed
-    if (CONFIG.instantSnapDivisor = 1.01) {
-      instantAimAt(aimPos);
-    } else {
-      smoothAimAt(aimPos, CONFIG.instantSnapDivisor);
-    }
+  } catch (e) {
+    console.error("attemptAutoFire error:", e);
+  }
+}
 
-    // burst / spray compensation hook if game exposes it
-    try {
-      if (CONFIG.burstCompEnabled && typeof game !== 'undefined' && typeof game.autoAdjustSpray === 'function') {
-        game.autoAdjustSpray(aimPos, CONFIG.burstCompFactor);
-      }
-    } catch (e) {}
+  // core engage function
+function engageTarget(target) {
+  if (!target) return;
+  const head = getHeadPos(target);
+  if (!head) return;
 
-    // micro corrections
-    if (CONFIG.microCorrectionEnabled && typeof game !== 'undefined' && typeof game.microCorrect === 'function') {
-      try { game.microCorrect(aimPos); } catch (e) {}
-    }
+  const player = getPlayer();
+  const dist = distanceBetween(player, head);
 
-    // try to fire when near target
+  // Luôn ưu tiên head pos có dự đoán
+  let aimPos = computeAimPosition(target) || predictPosition(target, CONFIG.headLeadMs) || head;
+
+  // Nếu đang swipe gần đầu -> hỗ trợ vuốt tới đúng head
+  const swipeAssist = humanSwipeAssist(target);
+  if (swipeAssist) aimPos = swipeAssist;
+
+  // Nếu khoảng cách rất gần -> snap ngay + bắn
+  if (dist <= CONFIG.closeRangeMeters) {
+    instantAimAt(aimPos);
+    attemptAutoFire(target, aimPos);
+    return;
+  }
+
+  // Pre-fire khi kẻ địch chuẩn bị peek
+  if (dist <= CONFIG.preFireRange && willPeekSoon(target)) {
+    const prePos = predictPosition(target, CONFIG.preFireLeadMs) || aimPos;
+    instantAimAt(prePos);
+    fireNow();
+    return;
+  }
+
+  // Aim tiêu chuẩn: nếu instantSnapDivisor nhỏ thì snap, lớn thì smooth
+  if (CONFIG.instantSnapDivisor <= 1.01) {
+    instantAimAt(aimPos);
+  } else {
+    smoothAimAt(aimPos, CONFIG.instantSnapDivisor);
+  }
+
+  // Compensation & micro-correction
+  if (CONFIG.burstCompEnabled && game?.autoAdjustSpray) {
+    game.autoAdjustSpray(aimPos, CONFIG.burstCompFactor);
+  }
+  if (CONFIG.microCorrectionEnabled && game?.microCorrect) {
+    game.microCorrect(aimPos);
+  }
+
+  // Ép bắn khi gần đầu
+  if (crosshairIsNearHead(target, CONFIG.headLockThresholdPx)) {
+    fireNow();
+  } else {
     attemptAutoFire(target, aimPos);
   }
+}
 
   /* ============== AIM MOVEMENT HELPERS ============== */
-  function instantAimAt(pos) {
-    if (!pos) return;
-    try {
-      setCrosshair({ x: pos.x, y: pos.y });
-    } catch (e) {}
-  }
+function instantAimAt(pos) {
+  if (!pos) return;
+  try {
+    // Lock instantly but with tiny random micro-offset to look human
+    const offsetX = (Math.random() - 0.5) * CONFIG.humanOffsetPx;
+    const offsetY = (Math.random() - 0.5) * CONFIG.humanOffsetPx;
+    setCrosshair({ x: pos.x + offsetX, y: pos.y + offsetY });
+  } catch (e) {}
+}
 
-  function smoothAimAt(pos, divisor = 3.0) {
-    try {
-      if (!pos) return;
-      const current = crosshairPos();
-      const next = {
-        x: current.x + (pos.x - current.x) / divisor,
-        y: current.y + (pos.y - current.y) / divisor
-      };
-      setCrosshair(next);
-    } catch (e) {}
-  }
+function smoothAimAt(pos, divisor = 3.0) {
+  if (!pos) return;
+  try {
+    const current = crosshairPos();
+    // Predict target movement for smoother tracking
+    const predicted = predictPositionFromVelocity(pos, CONFIG.predictMs);
+    // Easing factor for smooth approach
+    const easing = CONFIG.aimEasing || 0.15; // smaller = slower
+    const next = {
+      x: current.x + (predicted.x - current.x) * easing,
+      y: current.y + (predicted.y - current.y) * easing
+    };
+    // Clamp max speed
+    const maxStep = CONFIG.maxAimStepPx;
+    const dx = next.x - current.x, dy = next.y - current.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist > maxStep) {
+      next.x = current.x + dx / dist * maxStep;
+      next.y = current.y + dy / dist * maxStep;
+    }
+    setCrosshair(next);
+  } catch (e) {}
+}
 
-  /* ============== AUX DETECTION ============== */
-  function willPeekSoon(enemy) {
-    if (!enemy) return false;
-    if (enemy.isAtCoverEdge || enemy.peekIntent) return true;
-    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
-    const speed = Math.sqrt((vel.x||0)*(vel.x||0) + (vel.y||0)*(vel.y||0) + (vel.z||0)*(vel.z||0));
-    if (speed < 0.15 && (enemy.priorSpeed && enemy.priorSpeed > 0.5)) return true;
-    return Math.random() < 0.12; // slightly higher chance
-  }
+
+
+
 
   /* ============== MAIN LOOP ============== */
   function tick() {
-    try {
-      const enemies = getEnemies();
-      if (!enemies || enemies.length === 0) return;
-      const target = chooseTarget(enemies);
-      if (!target) return;
-      engageTarget(target);
-    } catch (e) {
-      // swallow all errors to avoid breaking host page
-      try { console.debug('[AutoHeadlockProMax] tick error', e); } catch (e2) {}
+  try {
+    const enemies = getEnemies();
+    if (!enemies || enemies.length === 0) return;
+
+    // 1️⃣ Chọn mục tiêu tốt nhất (VIP, danger, distance, health, ping, weapon)
+    const target = chooseTarget(enemies);
+    if (!target) return;
+
+    // 2️⃣ Dự đoán kẻ địch chuẩn bị peek để pre-fire
+    if (willPeekSoon(target)) {
+      const prePos = predictPosition(target, CONFIG.preFireLeadMs) || getHeadPos(target);
+      smoothAimAt(prePos, CONFIG.instantSnapDivisor);
+      fireNow();
     }
+
+    // 3️⃣ Compute aim position pipeline nâng cao (head lock 100%)
+    const aimPos = computeAimPosition(target);
+    if (!aimPos) return;
+
+    // 4️⃣ Human swipe assist (vuốt gần → snap vào đầu)
+    const swipePos = humanSwipeAssist(target);
+    const finalAim = swipePos || aimPos;
+
+    // 5️⃣ Aim tới target: instant snap hoặc smoothed
+    if (CONFIG.instantSnapDivisor <= 1.01) {
+      instantAimAt(finalAim);
+    } else {
+      smoothAimAt(finalAim, CONFIG.instantSnapDivisor);
+    }
+
+    // 6️⃣ Burst / micro correction hooks
+    if (CONFIG.burstCompEnabled && game?.autoAdjustSpray) {
+      game.autoAdjustSpray(finalAim, CONFIG.burstCompFactor);
+    }
+    if (CONFIG.microCorrectionEnabled && game?.microCorrect) {
+      game.microCorrect(finalAim);
+    }
+
+    // 7️⃣ Attempt auto-fire khi gần đầu hoặc dự đoán vị trí
+    attemptAutoFire(target, finalAim);
+
+    // 8️⃣ Cập nhật trạng thái hiện tại
+    STATE.currentTarget = target;
+
+  } catch (e) {
+    try { console.debug('[AutoHeadlockProMax] tick error', e); } catch (e2) {}
   }
+}
+
 
   /* ============== BOOT ============== */
   function init() {
-    try {
-      // try to wire basic game events if present
-      if (window.game && typeof game.on === 'function') {
-        try { game.on('playerDamaged', () => { STATE.lastShotAt = now(); STATE.bulletIndex = 0; }); } catch (e) {}
-        try { game.on('youWereShot', () => { STATE.lastShotAt = now(); STATE.bulletIndex = 0; }); } catch (e) {}
-        try { game.on('weaponFired', () => { STATE.bulletIndex = (STATE.bulletIndex || 0) + 1; }); } catch (e) {}
-      }
-    } catch (e) {}
-
-    // run main loop
-    try {
-      setInterval(tick, CONFIG.tickIntervalMs);
-    } catch (e) {}
-    console.log('[AutoHeadlockProMax v15.0] NoEscape-GodMode FullPower loaded.');
+  try {
+    // 1️⃣ Hook tất cả event game mạnh mẽ
+    if (window.game && typeof game.on === 'function') {
+      try { game.on('playerDamaged', () => { STATE.lastShotAt = now(); STATE.bulletIndex = 0; }); } catch(e){}
+      try { game.on('youWereShot', () => { STATE.lastShotAt = now(); STATE.bulletIndex = 0; }); } catch(e){}
+      try { game.on('weaponFired', () => { STATE.bulletIndex = (STATE.bulletIndex||0)+1; }); } catch(e){}
+      try { game.on('reload', () => { STATE.bulletIndex = 0; }); } catch(e){}
+      try { game.on('kill', () => { STATE.currentTarget = null; }); } catch(e){}
+      try { game.on('death', () => { STATE.currentTarget = null; STATE.lastShotAt = 0; STATE.bulletIndex = 0; }); } catch(e){}
+    }
+  } catch (e) {
+    console.warn('[AutoHeadlockProMax] Event hook failed', e);
   }
 
-  // Kick off
-  init();
+  // 2️⃣ Main loop cực nhanh
+  const runTick = () => {
+    try { tick(); } catch(e){}
+    requestAnimationFrame(runTick); // tick max tốc độ, gần như real-time
+  };
+  runTick();
+
+  // 3️⃣ Status log
+  console.log('[AutoHeadlockProMax v15.0] NoEscape-GodMode FullPower loaded. Tick running max speed.');
+}
+
+// Kick off
+init();
+
 
 })();
