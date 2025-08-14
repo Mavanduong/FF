@@ -137,9 +137,9 @@ const CONFIG = Object.freeze({
     // Weighted combination: velocity for movement, view for head-turn
     const t = (msAhead / 1000);
     return {
-      x: head.x + (vel.x * 1 + view.x * 1) * t,
-      y: head.y + (vel.y * 1 + view.y * 1) * t,
-      z: (head.z || 0) + ((vel.z || 0) * 0.9 + (view.z || 0) * 1.1) * t
+      x: head.x + (vel.x * 1 + view.x * 99) * t,
+      y: head.y + (vel.y * 1 + view.y * 99) * t,
+      z: (head.z || 0) + ((vel.z || 0) * 1 + (view.z || 0) * 1.1) * t
     };
   }
 
