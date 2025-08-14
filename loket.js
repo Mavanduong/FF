@@ -318,52 +318,135 @@ function updateRuntimeStats() {
 }
 
 //chưa sửa
-  function fireNow() {
-    try {
+ function fireNow(mode = 'single', burstCount = 10, burstDelay = 50) {
+  try {
+    const nowTime = performance.now();
+
+    // Cập nhật trạng thái chung
+    STATE.lastShotAt = nowTime;
+    STATE.bulletIndex = (STATE.bulletIndex || 0) + 1;
+
+    const triggerFire = () => {
       if (window.game && typeof game.fire === 'function') {
         game.fire();
-        STATE.lastShotAt = now();
-        STATE.bulletIndex = (STATE.bulletIndex || 0) + 110;
       } else if (typeof window.fire === 'function') {
         window.fire();
-        STATE.lastShotAt = now();
-        STATE.bulletIndex = (STATE.bulletIndex || 0) + 110;
       }
-    } catch (e) {}
+      console.log(`Shot #${STATE.bulletIndex} at ${nowTime.toFixed(2)}ms`);
+    };
+
+    if (mode === 'single') {
+      triggerFire();
+    }
+    else if (mode === 'burst') {
+      for (let i = 0; i < burstCount; i++) {
+        setTimeout(() => {
+          triggerFire();
+          STATE.bulletIndex++;
+        }, i * burstDelay);
+      }
+    }
+    else if (mode === 'auto') {
+      let autoInterval = setInterval(() => {
+        triggerFire();
+        STATE.bulletIndex++;
+        if (STATE.bulletIndex > 50) { // giới hạn an toàn
+          clearInterval(autoInterval);
+        }
+      }, 100);
+    }
+
+  } catch (e) {
+    console.error("fireNow error:", e);
   }
+}
+
 
   /* ============== PREDICTION & COMPENSATION ============== */
 
   // Predict where enemy head will be after msAhead (combines velocity + view direction)
   function predictHeadTurn(enemy, msAhead = CONFIG.headTurnPredictionMs) {
-    const head = getHeadPos(enemy);
-    if (!head) return null;
-    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
-    const view = enemy.viewDir || { x: 0, y: 0, z: 0 }; // facing vector if available
-    // Weighted combination: velocity for movement, view for head-turn
-    const t = (msAhead / 1000);
-    return {
-      x: head.x + (vel.x * 1 + view.x * 99) * t,
-      y: head.y + (vel.y * 1 + view.y * 99) * t,
-      z: (head.z || 0) + ((vel.z || 0) * 1 + (view.z || 0) * 1.1) * t
-    };
-  }
+  const head = getHeadPos(enemy);
+  if (!head) return null;
+
+  const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
+  const prevVel = enemy.prevVelocity || vel;
+  const acc = {
+    x: vel.x - prevVel.x,
+    y: vel.y - prevVel.y,
+    z: (vel.z || 0) - (prevVel.z || 0)
+  };
+
+  const view = enemy.viewDir || { x: 0, y: 0, z: 0 };
+  const angularVel = enemy.angularVelocity || { x: 0, y: 0, z: 0 };
+
+  // Adaptive weight: nếu kẻ địch đứng yên, tăng trọng số viewDir
+  const speed = Math.sqrt(vel.x ** 2 + vel.y ** 2 + vel.z ** 2);
+  const viewWeight = speed < 0.1 ? 1.5 : 1.0;
+  const velWeight = speed < 0.1 ? 0.2 : 1.0;
+
+  // Bù trễ mạng
+  const latencySec = (CONFIG.networkPingMs || 50) / 1000;
+  const t = (msAhead / 1000) + latencySec;
+
+  // Dự đoán vị trí đầu
+  return {
+    x: head.x 
+       + (vel.x * velWeight + view.x * 100 * viewWeight) * t 
+       + 0.5 * acc.x * t * t
+       + angularVel.x * t,
+    y: head.y 
+       + (vel.y * velWeight + view.y * 100 * viewWeight) * t 
+       + 0.5 * acc.y * t * t
+       + angularVel.y * t,
+    z: (head.z || 0) 
+       + ((vel.z || 0) * velWeight + (view.z || 0) * 1.1 * viewWeight) * t 
+       + 0.5 * acc.z * t * t
+       + angularVel.z * t
+  };
+}
 
   // Apply lag compensation based on network ping (if available)
-  function applyLagComp(pos, enemy) {
-    if (!CONFIG.lagCompensation || !pos || !enemy) return pos;
-    try {
-      const ping = (game && game.network && game.network.ping) ? game.network.ping : (game?.network?.ping || 0);
-      const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
-      const t = (ping / 1000);
-      return {
-        x: pos.x + vel.x * t,
-        y: pos.y + vel.y * t,
-        z: (pos.z || 0) + (vel.z || 0) * t
-      };
-    } catch (e) { return pos; }
-  }
+ function applyLagComp(pos, enemy) {
+  if (!CONFIG.lagCompensation || !pos || !enemy) return pos;
 
+  try {
+    // Lấy ping (ms)
+    let ping = 0;
+    if (game?.network?.ping) ping = game.network.ping;
+    else if (game && game.network && game.network.ping) ping = game.network.ping;
+
+    // Giới hạn ping để tránh bù quá đà
+    ping = Math.min(Math.max(ping, 0), 500);
+
+    // Vận tốc & gia tốc
+    const vel = enemy.velocity || { x: 0, y: 0, z: 0 };
+    const prevVel = enemy.prevVelocity || vel;
+    const acc = {
+      x: vel.x - prevVel.x,
+      y: vel.y - prevVel.y,
+      z: (vel.z || 0) - (prevVel.z || 0)
+    };
+
+    // Hướng nhìn (dùng khi vận tốc thấp nhưng kẻ địch xoay nhanh)
+    const view = enemy.viewDir || { x: 0, y: 0, z: 0 };
+    const angularVel = enemy.angularVelocity || { x: 0, y: 0, z: 0 };
+
+    const t = ping / 1000; // giây
+
+    // Bù trễ mạng + dự đoán mượt
+    return {
+      x: pos.x + vel.x * t + 0.5 * acc.x * t * t + view.x * 0.05 * t + angularVel.x * 0.02,
+      y: pos.y + vel.y * t + 0.5 * acc.y * t * t + view.y * 0.05 * t + angularVel.y * 0.02,
+      z: (pos.z || 0) + (vel.z || 0) * t + 0.5 * acc.z * t * t + (view.z || 0) * 0.02 * t
+    };
+
+  } catch (e) {
+    return pos; // fallback
+  }
+}
+
+//chua sua 2
   // Beam smoothing to make motion look human and avoid abrupt jumps
   function applyBeamMode(pos) {
     if (!pos) return pos;
