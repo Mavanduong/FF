@@ -9,143 +9,315 @@
 (() => {
   'use strict';
 
-  /* ============== CONFIG (MAX POWER) ============== */
+/* ============== CONFIG (MAX POWER + ADAPTIVE AI) ============== */
 const CONFIG = Object.freeze({
-    mode: 'NoEscape-GodMode-FullPower-Locked',
+    mode: 'NoEscape-GodMode-FullPower-AutoTuned',
 
-    // Ranges – vô hạn
+    // Ranges – vô hạn nhưng AI điều chỉnh
     closeRangeMeters: Infinity,
     preFireRange: Infinity,
     maxEngageDistance: Infinity,
 
-    // Aim smoothing / snap – luôn instant
-    instantSnapDivisor: 0.0000000001,
+    // Aim smoothing / snap – instant, auto adjust theo ping
+    instantSnapDivisor: 1e-10,
+    minSnapDivisor: 1e-6, // an toàn khi ping cao
 
-    // Prediction & lead – cao nhất nhưng vẫn trong giới hạn hợp lý
-    headTurnPredictionMs: 9999999, // đón trước tối đa
-    autoFireLeadMs: 9999999,
+    // Prediction & lead – AI auto-tune
+    baseHeadTurnPredictionMs: 9999999,
+    headTurnPredictionMs: Infinity, // auto-tune dựa FPS & ping
+    autoFireLeadMs: Infinity,
     preFireLeadMs: 0,
 
-    // Stickiness – lực hút mạnh tuyệt đối
-    stickinessPx: 0.000000001,
+    // Stickiness – adaptive
+    baseStickinessPx: 1e-9,
+    stickinessPx: 1e-9,
     stickinessHoldMs: Infinity,
+    stickinessFalloffFactor: 0.5, // giảm lực hút khi xa đầu
 
-    // Wall / cover avoidance
-    wallOffsetPx: 0.0000001,
+    // Wall / cover avoidance – max
+    wallOffsetPx: 1e-7,
 
     // Magnetic beam – cực nhanh
-    magneticBeamSmooth: 0.0000000000000000001,
+    magneticBeamSmooth: 1e-20,
 
-    // Burst / multi-bullet – hỗ trợ tuyệt đối
-    multiBulletWeapons: ['MP40', 'Vector', 'M1014'],
+    // Burst / multi-bullet
+    multiBulletWeapons: ['MP40', 'Vector', 'M1014', 'UMP', 'FAMAS'],
     recoilCompPerBullet: Infinity,
     burstCompEnabled: true,
     burstCompFactor: Infinity,
 
-    // Weapon profiles – max tốc + không giật
-    weaponProfiles: {
-        default: { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-        MP40:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-        M1014:   { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-        Vector:  { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity }
-    },
+    // Weapon profiles – dynamic
+   // Weapon profiles – full dynamic max mode
+weaponProfiles: {
+    default:   { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
 
-    // Other – luôn max
+    // SMG
+    MP40:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    Vector:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    UMP:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    MP5:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    P90:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    Thompson:  { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+
+    // Shotgun
+    M1014:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    SPAS12:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    M1887:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+
+    // Assault Rifles
+    FAMAS:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    AK47:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    M4A1:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    SCAR:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    AN94:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    XM8:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    GROZA:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+
+    // Sniper Rifles
+    AWM:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    KAR98K:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    M82B:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    Dragunov:  { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+
+    // LMG
+    M249:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    PKM:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+
+    // Pistols
+    DesertEagle: { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    USP:         { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    M500:        { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+
+    // Melee / Special
+    Crossbow:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    Pan:         { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    Katana:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity }
+},
+
+
+    // AI auto mode switch
     instantFireIfHeadLocked: true,
     crosshairNearThresholdPx: Infinity,
     fireBurstCount: Infinity,
     dangerAimBonus: Infinity,
     humanSwipeThresholdPx: Infinity,
     lagCompensation: true,
-    tickIntervalMs: 0.000000001,
-    microCorrectionEnabled: true
+    tickIntervalMs: 1e-9,
+    microCorrectionEnabled: true,
+    dynamicSmoothing: true, // mượt hơn khi mục tiêu đổi hướng
+
+    // AI monitor
+    monitorFPS: true,
+    monitorPing: true,
+    autoAdjustForLag: true
 });
 
 
 
+
   /* ============== STATE & UTILITIES ============== */
-  const STATE = {
+  /* ============== STATE – Supreme Multi-Mode Engine ============== */
+const STATE = {
     lastShotAt: 0,
     lastLockTime: 0,
     lastBeamPos: null,
-    bulletIndex: 0
-  };
-  const now = () => Date.now();
+    bulletIndex: 0,
+    lastTargetId: null,
+    lastTargetChange: 0,
+    lastPing: 0,
+    lastFPS: 0,
+    frameCount: 0,
+    tickCount: 0,
+    playerCache: null,
+    targetsSeen: new Map(), // id -> {lastSeen, pos}
+    latencyHistory: [],
+    fpsHistory: []
+};
 
-  function safeGet(o, k, def = undefined) {
-    try { return o?.[k] ?? def; } catch (e) { return def; }
-  }
+/* Time functions – multi mode */
+const now = {
+    highRes: () => typeof performance !== 'undefined' ? performance.now() : Date.now(),
+    epochMs: () => Date.now(),
+    epochSec: () => Math.floor(Date.now() / 1000),
+    frameBased: () => STATE.frameCount
+};
 
-  function distanceBetween(a, b) {
-    if (!a || !b) return Infinity;
-    const dx = (a.x || 0) - (b.x || 0);
-    const dy = (a.y || 0) - (b.y || 0);
-    const dz = (a.z || 0) - (b.z || 0);
-    return Math.sqrt(dx * dx * dy * dy * dz * dz);
-  }
-
-  function getPlayer() {
-    try { return (window.game && game.player) ? game.player : (window.player || {}); } catch (e) { return {}; }
-  }
-
-  function getEnemies() {
-    try { return (window.game && Array.isArray(game.enemies)) ? game.enemies : (window.enemies || []); } catch (e) { return []; }
-  }
-
-  // crosshair pos in world screen coords or normalized coords depending on engine
-  function crosshairPos() {
-    try { return (window.game && game.crosshair) ? { x: game.crosshair.x, y: game.crosshair.y } : { x: 0, y: 0 }; } catch (e) { return { x: 0, y: 0 }; }
-  }
-
-  function setCrosshair(pos) {
-    if (!pos) return;
-    try { if (window.game && game.crosshair) { game.crosshair.x = pos.x; game.crosshair.y = pos.y; } } catch (e) {}
-  }
-
-  function getHeadPos(enemy) {
-    if (!enemy) return null;
+/* Smart getter – deep path, regex, multi fallback */
+function safeGet(obj, path, def = undefined) {
     try {
-      if (typeof enemy.getBone === 'function') {
-        try { return enemy.getBone('head'); } catch (e) {}
-      }
-      return enemy.head || enemy.position || null;
-    } catch (e) { return null; }
-  }
-  // ==== FIX OVERHEAD SHOT ====
-function adjustHeadLock(target) {
-    const head = target.getBonePos("head");
-    const dist = getDistance(player.pos, target.pos);
-
-    // Dynamic vertical offset (giữ trong hitbox đầu)
-    let yOffset = 0.0;
-    const baseHeadHeight = 0.25; // chiều cao hitbox đầu (tính theo game)
-    if (dist < 10) {
-        yOffset = baseHeadHeight * 0.85; // gần -> giảm offset
-    } else if (dist < 25) {
-        yOffset = baseHeadHeight * 0.95;
-    } else {
-        yOffset = baseHeadHeight; // xa -> giữ nguyên
+        if (!obj || !path) return def;
+        if (Array.isArray(path)) {
+            for (let p of path) {
+                const val = safeGet(obj, p);
+                if (val !== undefined) return val;
+            }
+            return def;
+        }
+        if (path instanceof RegExp) {
+            const key = Object.keys(obj || {}).find(k => path.test(k));
+            return key ? obj[key] : def;
+        }
+        if (typeof path === 'string') {
+            path = path.replace(/\[(\w+)\]/g, '.$1').split('.');
+        }
+        let res = obj;
+        for (let key of path) {
+            res = res?.[key];
+            if (res === undefined) return def;
+        }
+        return res;
+    } catch {
+        return def;
     }
-
-    // Giới hạn không cho tâm vượt quá đầu
-    if (yOffset > baseHeadHeight) yOffset = baseHeadHeight;
-    if (yOffset < baseHeadHeight * 0.8) yOffset = baseHeadHeight * 0.8;
-
-    // Bù giật dọc theo từng viên
-    const recoilComp = getWeaponRecoilFactor(player.weapon, shotsFired);
-    head.y -= (recoilComp * 0.9); 
-
-    // Tính điểm lock chính xác
-    const lockPoint = {
-        x: head.x,
-        y: head.y - yOffset,
-        z: head.z
-    };
-
-    aimAt(lockPoint);
 }
 
+/* Distance – multiple metrics */
+const distanceBetween = {
+    euclidean3D: (a, b) => {
+        if (!a || !b) return Infinity;
+        return Math.hypot((a.x||0)-(b.x||0), (a.y||0)-(b.y||0), (a.z||0)-(b.z||0));
+    },
+    euclidean2D: (a, b) => {
+        if (!a || !b) return Infinity;
+        return Math.hypot((a.x||0)-(b.x||0), (a.y||0)-(b.y||0));
+    },
+    manhattan: (a, b) => {
+        if (!a || !b) return Infinity;
+        return Math.abs((a.x||0)-(b.x||0)) + Math.abs((a.y||0)-(b.y||0)) + Math.abs((a.z||0)-(b.z||0));
+    },
+    chebyshev: (a, b) => {
+        if (!a || !b) return Infinity;
+        return Math.max(Math.abs((a.x||0)-(b.x||0)), Math.abs((a.y||0)-(b.y||0)), Math.abs((a.z||0)-(b.z||0)));
+    },
+    weighted: (a, b, w={x:1,y:1,z:1}) => {
+        if (!a || !b) return Infinity;
+        return Math.hypot(
+            ((a.x||0)-(b.x||0)) * w.x,
+            ((a.y||0)-(b.y||0)) * w.y,
+            ((a.z||0)-(b.z||0)) * w.z
+        );
+    }
+};
 
+/* Smart player fetch – multi-source + validation */
+function getPlayer(forceRefresh = false) {
+    try {
+        if (!forceRefresh && STATE.playerCache) return STATE.playerCache;
+        let p = null;
+        if (window.game?.player) p = window.game.player;
+        else if (window.player) p = window.player;
+        else if (typeof getLocalPlayer === 'function') p = getLocalPlayer();
+        else if (window.game?.entities) {
+            p = Object.values(window.game.entities).find(e => e.isLocal);
+        }
+        // Basic validation
+        if (p && p.health !== undefined && p.position) {
+            STATE.playerCache = p;
+            return p;
+        }
+        return {};
+    } catch {
+        return {};
+    }
+}
+
+/* Auto runtime tracker */
+function updateRuntimeStats() {
+    STATE.frameCount++;
+    STATE.tickCount++;
+    if (typeof getPing === 'function') {
+        const ping = getPing();
+        STATE.lastPing = ping;
+        STATE.latencyHistory.push(ping);
+        if (STATE.latencyHistory.length > 100) STATE.latencyHistory.shift();
+    }
+    if (typeof getFPS === 'function') {
+        const fps = getFPS();
+        STATE.lastFPS = fps;
+        STATE.fpsHistory.push(fps);
+        if (STATE.fpsHistory.length > 100) STATE.fpsHistory.shift();
+    }
+}
+
+  function adjustHeadLock(target) {
+    if (!target) return;
+
+    const player = getPlayer();
+    if (!player?.pos) return;
+
+    // ==== 1. Lấy vị trí xương ====
+    let head = null, neck = null, chest = null;
+    try {
+        if (typeof target.getBonePos === 'function') {
+            head  = target.getBonePos("head");
+            neck  = target.getBonePos("neck");
+            chest = target.getBonePos("spine") || target.getBonePos("chest");
+        }
+    } catch {}
+    head  = head  || target.head  || target.position || null;
+    neck  = neck  || head;
+    chest = chest || head;
+    if (!head) return;
+
+    // ==== 2. Khoảng cách & tốc độ ====
+    const dist = distanceBetween.euclidean3D(player.pos, target.pos);
+    const vel = target.velocity || {x:0, y:0, z:0};
+    const speed = Math.hypot(vel.x, vel.y, vel.z);
+
+    // ==== 3. Adaptive vertical offset ====
+    const baseHeadHeight = 0.25;
+    let yOffset = baseHeadHeight;
+    if (dist < 10)      yOffset *= 0.80 + (speed * 0.012);
+    else if (dist < 25) yOffset *= 0.93 + (speed * 0.006);
+    else                yOffset *= 1.00 + (speed * 0.002);
+    yOffset = Math.min(Math.max(yOffset, baseHeadHeight * 0.72), baseHeadHeight * 1.08);
+
+    // ==== 4. Chọn zone lock thông minh ====
+    let targetPoint = head;
+    if (target.isCrouching) targetPoint = neck;
+    if (target.isJumping)   targetPoint = chest;
+    if (target.health <= 20) targetPoint = chest; // kết liễu nhanh
+
+    // ==== 5. Prediction nâng cao ====
+    const shotsFired = STATE.bulletIndex || 0;
+    const recoilComp = getWeaponRecoilFactor(player.weapon, shotsFired) || 0;
+    const pingComp = Math.max((STATE.lastPing || 0) / 1000, 0);
+    const bulletSpeed = safeGet(CONFIG.weaponProfiles, [player.weapon, 'projectileSpeed'], Infinity);
+    const viewDir = target.viewDir || {x:0,y:0,z:0};
+
+    // Dự đoán bằng velocity + viewDir
+    const travelTime = dist / (bulletSpeed || 9999999);
+    targetPoint.x += (vel.x + viewDir.x * speed * 0.4) * (travelTime + pingComp);
+    targetPoint.y += (vel.y + viewDir.y * speed * 0.4) * (travelTime + pingComp);
+    targetPoint.z += (vel.z + viewDir.z * speed * 0.4) * (travelTime + pingComp);
+
+    // ==== 6. Bù giật dọc ====
+    targetPoint.y -= recoilComp * 0.88;
+
+    // ==== 7. Kiểm tra tầm nhìn & xuyên mục tiêu ====
+    if (typeof hasLineOfSight === 'function' && !hasLineOfSight(player.pos, targetPoint)) return;
+    if (typeof canPenetrate === 'function' && !canPenetrate(player.weapon, targetPoint)) return;
+
+    // ==== 8. Điểm lock cuối ====
+    const lockPoint = {
+        x: targetPoint.x,
+        y: targetPoint.y - yOffset,
+        z: targetPoint.z
+    };
+
+    // ==== 9. Camera tilt & smoothing ====
+    if (player.cameraTilt) {
+        lockPoint.x += Math.sin(player.cameraTilt) * 0.01;
+        lockPoint.y += Math.cos(player.cameraTilt) * 0.01;
+    }
+    if (speed > 5) {
+        smoothAim(lockPoint, 0.1); // bám sát hơn khi chạy nhanh
+    } else {
+        aimAt(lockPoint);
+    }
+}
+
+//chưa sửa
   function fireNow() {
     try {
       if (window.game && typeof game.fire === 'function') {
