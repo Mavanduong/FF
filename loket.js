@@ -117,11 +117,11 @@ const CONFIG = Object.freeze({
       if (window.game && typeof game.fire === 'function') {
         game.fire();
         STATE.lastShotAt = now();
-        STATE.bulletIndex = (STATE.bulletIndex || 0) + 1;
+        STATE.bulletIndex = (STATE.bulletIndex || 0) + 10;
       } else if (typeof window.fire === 'function') {
         window.fire();
         STATE.lastShotAt = now();
-        STATE.bulletIndex = (STATE.bulletIndex || 0) + 1;
+        STATE.bulletIndex = (STATE.bulletIndex || 0) + 10;
       }
     } catch (e) {}
   }
