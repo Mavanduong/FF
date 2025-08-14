@@ -41,7 +41,20 @@ const CONFIG = Object.freeze({
     magneticBeamSmooth: 1e-20,
 
     // Burst / multi-bullet
-    multiBulletWeapons: ['MP40', 'Vector', 'M1014', 'UMP', 'FAMAS'],
+    multiBulletWeapons: [
+    // SMG
+    'MP40', 'Vector', 'UMP', 'MP5', 'P90', 'Thompson',
+
+    // Shotgun (M1014, SPAS12 auto pump, M1887 không cần vì 2 viên)
+    'M1014', 'SPAS12' , 'M590',
+
+    // Assault Rifles
+    'FAMAS', 'AK47', 'M4A1', 'SCAR', 'AN94', 'XM8', 'GROZA',
+
+    // LMG
+    'M249', 'PKM'
+],
+
     recoilCompPerBullet: Infinity,
     burstCompEnabled: true,
     burstCompFactor: Infinity,
@@ -63,6 +76,7 @@ weaponProfiles: {
     M1014:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
     SPAS12:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
     M1887:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    M590:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
 
     // Assault Rifles
     FAMAS:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
