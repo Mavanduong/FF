@@ -338,35 +338,39 @@ function hyperCombo(currentTarget, playerPing, currentWeapon) {
 
 //sua hom 
 /* Smart getter – deep path, regex, multi fallback */
-function safeGet(obj, path, def = undefined) {
-    try {
-        if (!obj || !path) return def;
-        if (Array.isArray(path)) {
-            for (let p of path) {
-                const val = safeGet(obj, p);
-                if (val !== undefined) return val;
-            }
-            return def;
+function safeGet(obj, path, def) {
+    if (obj == null || path == null) return def;
+
+    // Nếu path là array -> thử tuần tự
+    if (Array.isArray(path)) {
+        for (let p of path) {
+            const val = safeGet(obj, p);
+            if (val !== undefined) return val;
         }
-        if (path instanceof RegExp) {
-            const key = Object.keys(obj || {}).find(k => path.test(k));
-            return key ? obj[key] : def;
-        }
-        if (typeof path === 'string') {
-            path = path.replace(/\[(\w+)\]/g, '.$1').split('.');
-        }
-        let res = obj;
-        for (let key of path) {
-            res = res?.[key];
-            if (res === undefined) return def;
-        }
-        return res;
-    } catch {
         return def;
     }
+
+    // Nếu path là regex -> tìm key match đầu tiên
+    if (path instanceof RegExp) {
+        const key = Object.keys(obj).find(k => path.test(k));
+        return key ? obj[key] : def;
+    }
+
+    // Nếu path là string -> convert sang array (memo hóa nếu dùng nhiều)
+    if (typeof path === 'string') {
+        path = path.split('.').map(k => k.replace(/\[(\w+)\]/, '$1'));
+    }
+
+    let res = obj;
+    for (let key of path) {
+        if (res == null) return def;
+        res = res[key];
+    }
+
+    return res === undefined ? def : res;
 }
 
-/* Distance – multiple metrics */
+/* Distance – advanced metrics */
 const distanceBetween = {
     euclidean3D: (a, b) => {
         if (!a || !b) return Infinity;
@@ -382,7 +386,11 @@ const distanceBetween = {
     },
     chebyshev: (a, b) => {
         if (!a || !b) return Infinity;
-        return Math.max(Math.abs((a.x||0)-(b.x||0)), Math.abs((a.y||0)-(b.y||0)), Math.abs((a.z||0)-(b.z||0)));
+        return Math.max(
+            Math.abs((a.x||0)-(b.x||0)),
+            Math.abs((a.y||0)-(b.y||0)),
+            Math.abs((a.z||0)-(b.z||0))
+        );
     },
     weighted: (a, b, w={x:1,y:1,z:1}) => {
         if (!a || !b) return Infinity;
@@ -391,172 +399,189 @@ const distanceBetween = {
             ((a.y||0)-(b.y||0)) * w.y,
             ((a.z||0)-(b.z||0)) * w.z
         );
+    },
+    squaredEuclidean: (a, b) => {
+        if (!a || !b) return Infinity;
+        return ((a.x||0)-(b.x||0))**2 + ((a.y||0)-(b.y||0))**2 + ((a.z||0)-(b.z||0))**2;
+    },
+    minkowski: (a, b, p=2) => {
+        if (!a || !b) return Infinity;
+        return (
+            Math.abs((a.x||0)-(b.x||0))**p +
+            Math.abs((a.y||0)-(b.y||0))**p +
+            Math.abs((a.z||0)-(b.z||0))**p
+        )**(1/p);
+    },
+    cosineSimilarity: (a, b) => {
+        if (!a || !b) return 0;
+        const dot = (a.x||0)*(b.x||0)+(a.y||0)*(b.y||0)+(a.z||0)*(b.z||0);
+        const magA = Math.hypot(a.x||0,a.y||0,a.z||0);
+        const magB = Math.hypot(b.x||0,b.y||0,b.z||0);
+        return magA && magB ? dot/(magA*magB) : 0;
+    },
+    haversine: (a, b) => {
+        if (!a || !b) return Infinity;
+        const R = 6371; // bán kính Trái Đất (km)
+        const toRad = d => d * Math.PI / 180;
+        const dLat = toRad((b.lat||0) - (a.lat||0));
+        const dLon = toRad((b.lon||0) - (a.lon||0));
+        const lat1 = toRad(a.lat||0);
+        const lat2 = toRad(b.lat||0);
+        const h = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+        return 2 * R * Math.asin(Math.sqrt(h));
     }
 };
 
-/* Smart player fetch – multi-source + validation */
+/* Smart Player Fetch – Advanced Version */
 function getPlayer(forceRefresh = false) {
     try {
-        if (!forceRefresh && STATE.playerCache) return STATE.playerCache;
-        let p = null;
-        if (window.game?.player) p = window.game.player;
-        else if (window.player) p = window.player;
-        else if (typeof getLocalPlayer === 'function') p = getLocalPlayer();
-        else if (window.game?.entities) {
-            p = Object.values(window.game.entities).find(e => e.isLocal);
+        if (!forceRefresh && STATE.playerCache && validatePlayer(STATE.playerCache)) {
+            return STATE.playerCache;
         }
-        // Basic validation
-        if (p && p.health !== undefined && p.position) {
-            STATE.playerCache = p;
-            return p;
+
+        let candidates = [
+            () => window.game?.player,
+            () => window.player,
+            () => typeof getLocalPlayer === 'function' ? getLocalPlayer() : null,
+            () => window.game?.entities ? Object.values(window.game.entities).find(e => e.isLocal) : null
+        ];
+
+        for (const fn of candidates) {
+            const p = fn();
+            if (validatePlayer(p)) {
+                STATE.playerCache = p;
+                return p;
+            }
         }
-        return {};
+
+        return safeFallback();
     } catch {
-        return {};
+        return safeFallback();
     }
 }
 
-/* Auto runtime tracker */
+/* Validation logic – ensure player object is legit */
+function validatePlayer(p) {
+    return p &&
+        typeof p === 'object' &&
+        typeof p.health === 'number' &&
+        p.position &&
+        typeof p.position.x === 'number' &&
+        typeof p.position.y === 'number';
+}
+
+/* Safe fallback – returns a dummy object */
+function safeFallback() {
+    return { health: 0, position: { x: 0, y: 0, z: 0 }, isValid: false };
+}
 function updateRuntimeStats() {
     STATE.frameCount++;
     STATE.tickCount++;
+
+    const nowTs = Date.now();
+    STATE.lastUpdate = nowTs;
+
     if (typeof getPing === 'function') {
         const ping = getPing();
         STATE.lastPing = ping;
-        STATE.latencyHistory.push(ping);
+        STATE.latencyHistory.push({ ping, ts: nowTs });
         if (STATE.latencyHistory.length > 100) STATE.latencyHistory.shift();
+        
+        STATE.avgPing = STATE.latencyHistory.reduce((a, b) => a + b.ping, 0) / STATE.latencyHistory.length;
+        STATE.maxPing = Math.max(...STATE.latencyHistory.map(p => p.ping));
+        STATE.minPing = Math.min(...STATE.latencyHistory.map(p => p.ping));
     }
+
     if (typeof getFPS === 'function') {
         const fps = getFPS();
         STATE.lastFPS = fps;
-        STATE.fpsHistory.push(fps);
+        STATE.fpsHistory.push({ fps, ts: nowTs });
         if (STATE.fpsHistory.length > 100) STATE.fpsHistory.shift();
+        
+        STATE.avgFPS = STATE.fpsHistory.reduce((a, b) => a + b.fps, 0) / STATE.fpsHistory.length;
+        STATE.minFPS = Math.min(...STATE.fpsHistory.map(f => f.fps));
     }
 }
 
   function adjustHeadLock(target) {
     if (!target) return;
-
     const player = getPlayer();
     if (!player?.pos) return;
 
-    // ==== 1. Lấy vị trí xương ====
-    let head = null, neck = null, chest = null;
-    try {
-        if (typeof target.getBonePos === 'function') {
-            head  = target.getBonePos("head");
-            neck  = target.getBonePos("neck");
-            chest = target.getBonePos("spine") || target.getBonePos("chest");
-        }
-    } catch {}
-    head  = head  || target.head  || target.position || null;
-    neck  = neck  || head;
-    chest = chest || head;
+    // === Bone positions ===
+    const head = target.getBonePos?.("head") || target.head || target.position;
+    const neck = target.getBonePos?.("neck") || head;
+    const chest = target.getBonePos?.("spine") || target.getBonePos?.("chest") || head;
     if (!head) return;
 
-    // ==== 2. Khoảng cách & tốc độ ====
+    // === Distance, speed ===
     const dist = distanceBetween.euclidean3D(player.pos, target.pos);
-    const vel = target.velocity || {x:0, y:0, z:0};
+    const vel = target.velocity || {x:0,y:0,z:0};
     const speed = Math.hypot(vel.x, vel.y, vel.z);
 
-    // ==== 3. Adaptive vertical offset ====
-    const baseHeadHeight = 0.25;
-    let yOffset = baseHeadHeight;
-    if (dist < 10)      yOffset *= 0.80 + (speed * 0.012);
-    else if (dist < 25) yOffset *= 0.93 + (speed * 0.006);
-    else                yOffset *= 1.00 + (speed * 0.002);
-    yOffset = Math.min(Math.max(yOffset, baseHeadHeight * 0.72), baseHeadHeight * 1.08);
+    // === Adaptive offset ===
+    let yOffset = 0.25;
+    if (target.isProne) yOffset *= 0.65;
+    else if (target.isCrouching) yOffset *= 0.85;
 
-    // ==== 4. Chọn zone lock thông minh ====
+    // === Dynamic hitbox selection ===
     let targetPoint = head;
-    if (target.isCrouching) targetPoint = neck;
-    if (target.isJumping)   targetPoint = chest;
-    if (target.health <= 20) targetPoint = chest; // kết liễu nhanh
+    if (target.health < 30) targetPoint = chest; // safe kill
+    else if (dist > 60) targetPoint = neck; // sniper: head too hard at long range
 
-    // ==== 5. Prediction nâng cao ====
-    const shotsFired = STATE.bulletIndex || 0;
-    const recoilComp = getWeaponRecoilFactor(player.weapon, shotsFired) || 0;
-    const pingComp = Math.max((STATE.lastPing || 0) / 1000, 0);
-    const bulletSpeed = safeGet(CONFIG.weaponProfiles, [player.weapon, 'projectileSpeed'], Infinity);
-    const viewDir = target.viewDir || {x:0,y:0,z:0};
+    // === Prediction with bullet drop ===
+    const pingComp = (STATE.lastPing || 0) / 1000;
+    const bulletSpeed = safeGet(CONFIG.weaponProfiles, [player.weapon, 'projectileSpeed'], 99999);
+    const gravity = CONFIG.gravity || 9.81;
+    const travelTime = dist / bulletSpeed;
 
-    // Dự đoán bằng velocity + viewDir
-    const travelTime = dist / (bulletSpeed || 9999999);
-    targetPoint.x += (vel.x + viewDir.x * speed * 0.4) * (travelTime + pingComp);
-    targetPoint.y += (vel.y + viewDir.y * speed * 0.4) * (travelTime + pingComp);
-    targetPoint.z += (vel.z + viewDir.z * speed * 0.4) * (travelTime + pingComp);
+    targetPoint.x += vel.x * (travelTime + pingComp);
+    targetPoint.y += vel.y * (travelTime + pingComp);
+    targetPoint.z += vel.z * (travelTime + pingComp) - 0.5 * gravity * Math.pow(travelTime, 2);
 
-    // ==== 6. Bù giật dọc ====
+    // === Apply recoil compensation ===
+    const recoilComp = getWeaponRecoilFactor(player.weapon, STATE.bulletIndex || 0);
     targetPoint.y -= recoilComp * 0.008;
 
-    // ==== 7. Kiểm tra tầm nhìn & xuyên mục tiêu ====
-    if (typeof hasLineOfSight === 'function' && !hasLineOfSight(player.pos, targetPoint)) return;
-    if (typeof canPenetrate === 'function' && !canPenetrate(player.weapon, targetPoint)) return;
+    // === LOS & Penetration ===
+    if (hasLineOfSight && !hasLineOfSight(player.pos, targetPoint)) return;
+    if (canPenetrate && !canPenetrate(player.weapon, targetPoint)) return;
 
-    // ==== 8. Điểm lock cuối ====
+    // === Final lock point ===
     const lockPoint = {
         x: targetPoint.x,
         y: targetPoint.y - yOffset,
         z: targetPoint.z
     };
 
-    // ==== 9. Camera tilt & smoothing ====
-    if (player.cameraTilt) {
-        lockPoint.x += Math.sin(player.cameraTilt) * 0.01;
-        lockPoint.y += Math.cos(player.cameraTilt) * 0.01;
-    }
-    if (speed > 99) {
-        smoothAim(lockPoint, 0.1); // bám sát hơn khi chạy nhanh
-    } else {
-        aimAt(lockPoint);
-    }
+    // === Adaptive smoothing ===
+    const smoothing = dist < 15 ? 0.15 : dist < 40 ? 0.08 : 0.05;
+    smoothAim(lockPoint, smoothing);
 }
 
-//chưa sửa
- function fireNow(mode = 'single', burstCount = 10, burstDelay = 50) {
-  try {
-    const nowTime = performance.now();
+/* Auto runtime tracker with maxed stats */
+function updateRuntimeStats() {
+    // Frame & tick counts tăng cực nhanh
+    STATE.frameCount += 999999;  
+    STATE.tickCount += 999999;
 
-    // Cập nhật trạng thái chung
-    STATE.lastShotAt = nowTime;
-    STATE.bulletIndex = (STATE.bulletIndex || 0) + 1;
+    // Fake ping về mức thấp nhất hoặc cực cao (tùy bạn)
+    const maxPing = 0;  // 0ms giả lập mạng siêu nhanh
+    const maxFPS = 9999; // FPS siêu cao
 
-    const triggerFire = () => {
-      if (window.game && typeof game.fire === 'function') {
-        game.fire();
-      } else if (typeof window.fire === 'function') {
-        window.fire();
-      }
-      console.log(`Shot #${STATE.bulletIndex} at ${nowTime.toFixed(2)}ms`);
-    };
+    STATE.lastPing = maxPing;
+    STATE.lastFPS = maxFPS;
 
-    if (mode === 'single') {
-      triggerFire();
-    }
-    else if (mode === 'burst') {
-      for (let i = 0; i < burstCount; i++) {
-        setTimeout(() => {
-          triggerFire();
-          STATE.bulletIndex++;
-        }, i * burstDelay);
-      }
-    }
-    else if (mode === 'auto') {
-      let autoInterval = setInterval(() => {
-        triggerFire();
-        STATE.bulletIndex++;
-        if (STATE.bulletIndex > 50) { // giới hạn an toàn
-          clearInterval(autoInterval);
-        }
-      }, 100);
-    }
+    // Lịch sử ping và FPS full giá trị max
+    STATE.latencyHistory.push(maxPing);
+    STATE.fpsHistory.push(maxFPS);
 
-  } catch (e) {
-    console.error("fireNow error:", e);
-  }
+    // Giới hạn chiều dài mảng
+    if (STATE.latencyHistory.length > 100) STATE.latencyHistory.shift();
+    if (STATE.fpsHistory.length > 100) STATE.fpsHistory.shift();
 }
 
-
+///nay nhé ddddddd
   /* ============== PREDICTION & COMPENSATION ============== */
 
   // Predict where enemy head will be after msAhead (combines velocity + view direction)
