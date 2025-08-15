@@ -13,101 +13,92 @@
 const CONFIG = Object.freeze({
     mode: 'NoEscape-GodMode-FullPower-AutoTuned',
 
-    // Ranges – vô hạn nhưng AI điều chỉnh
+    // Ranges
     closeRangeMeters: Infinity,
     preFireRange: Infinity,
     maxEngageDistance: Infinity,
 
-    // Aim smoothing / snap – instant, auto adjust theo ping
+    // Aim smoothing / snap
     instantSnapDivisor: 1e-10,
-    minSnapDivisor: 1e-6, // an toàn khi ping cao
+    minSnapDivisor: 1e-6,
 
-    // Prediction & lead – AI auto-tune
+    // Prediction & lead
     baseHeadTurnPredictionMs: 9999999,
-    headTurnPredictionMs: Infinity, // auto-tune dựa FPS & ping
+    headTurnPredictionMs: Infinity,
     autoFireLeadMs: Infinity,
     preFireLeadMs: 0,
 
-    // Stickiness – adaptive
+    // Stickiness
     baseStickinessPx: 1e-9,
     stickinessPx: 1e-9,
     stickinessHoldMs: Infinity,
-    stickinessFalloffFactor: 0.5, // giảm lực hút khi xa đầu
+    stickinessFalloffFactor: 0.5,
 
-    // Wall / cover avoidance – max
+    // Wall avoidance
     wallOffsetPx: 1e-7,
 
-    // Magnetic beam – cực nhanh
+    // Magnetic beam
     magneticBeamSmooth: 1e-20,
 
     // Burst / multi-bullet
     multiBulletWeapons: [
-    // SMG
-    'MP40', 'Vector', 'UMP', 'MP5', 'P90', 'Thompson',
-
-    // Shotgun (M1014, SPAS12 auto pump, M1887 không cần vì 2 viên)
-    'M1014', 'SPAS12' , 'M590',
-
-    // Assault Rifles
-    'FAMAS', 'AK47', 'M4A1', 'SCAR', 'AN94', 'XM8', 'GROZA',
-
-    // LMG
-    'M249', 'PKM'
-],
+        'MP40','Vector','UMP','MP5','P90','Thompson',
+        'M1014','SPAS12','M590',
+        'FAMAS','AK47','M4A1','SCAR','AN94','XM8','GROZA',
+        'M249','PKM'
+    ],
 
     recoilCompPerBullet: Infinity,
     burstCompEnabled: true,
     burstCompFactor: Infinity,
 
-    // Weapon profiles – dynamic
-   // Weapon profiles – full dynamic max mode
-weaponProfiles: {
-    default:   { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+    // Weapon profiles – full dynamic max mode
+    weaponProfiles: {
+        default:   { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
 
-    // SMG
-    MP40:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    Vector:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    UMP:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    MP5:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    P90:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    Thompson:  { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        // SMG
+        MP40:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        Vector:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        UMP:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        MP5:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        P90:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        Thompson:  { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
 
-    // Shotgun
-    M1014:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    SPAS12:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    M1887:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    M590:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        // Shotgun
+        M1014:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        SPAS12:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        M1887:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        M590:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
 
-    // Assault Rifles
-    FAMAS:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    AK47:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    M4A1:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    SCAR:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    AN94:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    XM8:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    GROZA:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        // Assault Rifles
+        FAMAS:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        AK47:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        M4A1:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        SCAR:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        AN94:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        XM8:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        GROZA:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
 
-    // Sniper Rifles
-    AWM:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    KAR98K:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    M82B:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    Dragunov:  { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        // Sniper Rifles
+        AWM:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        KAR98K:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        M82B:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        Dragunov:  { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
 
-    // LMG
-    M249:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    PKM:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        // LMG
+        M249:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        PKM:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
 
-    // Pistols
-    DesertEagle: { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    USP:         { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    M500:        { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        // Pistols
+        DesertEagle:{ recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        USP:        { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        M500:       { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
 
-    // Melee / Special
-    Crossbow:    { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    Pan:         { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
-    Katana:      { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity }
-},
-
+        // Melee / Special
+        Crossbow:   { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        Pan:        { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity },
+        Katana:     { recoilX: 0, recoilY: 0, spreadComp: 0, projectileSpeed: Infinity }
+    },
 
     // AI auto mode switch
     instantFireIfHeadLocked: true,
@@ -118,13 +109,14 @@ weaponProfiles: {
     lagCompensation: true,
     tickIntervalMs: 1e-9,
     microCorrectionEnabled: true,
-    dynamicSmoothing: true, // mượt hơn khi mục tiêu đổi hướng
+    dynamicSmoothing: true,
 
     // AI monitor
     monitorFPS: true,
     monitorPing: true,
     autoAdjustForLag: true
 });
+
 
 
 
@@ -150,10 +142,25 @@ const STATE = {
 
   /* ========== SUPER POWER FUNCTIONS (ULTRA GOD MODE) ========== */
 
-// Khóa chết ngay lập tức vào head
-function autoLockOn(target) {
+// 🔥 Auto Lock-On MAX LEVEL: x100000000%
+// Tích hợp Prediction + Magnetic Pull + Instant Snap
+function autoLockOn(target, playerPing = 0) {
     if (!target) return null;
-    return { x: target.head.x, y: target.head.y };
+
+    // ✅ Dự đoán chuyển động cực chính xác (tính theo tốc độ + ping)
+    const pingFactor = playerPing / 1000; // chuyển ms thành giây
+    const predictedX = target.head.x + (target.velocity.x * pingFactor);
+    const predictedY = target.head.y + (target.velocity.y * pingFactor);
+
+    // ✅ Siêu từ tính: tăng độ bám vào đầu
+    const magneticBoost = 999999; // lực hút không thể thoát
+    const lockedX = (predictedX * magneticBoost) / (1 + Math.random() * 0.0000001);
+    const lockedY = (predictedY * magneticBoost) / (1 + Math.random() * 0.0000001);
+
+    return {
+        x: lockedX,
+        y: lockedY
+    };
 }
 
 // Dự đoán siêu cấp (hyper predict)
@@ -165,40 +172,171 @@ function hyperPredict(target, ping, bulletSpeed) {
     };
 }
 
-// Lực hút cực mạnh (magnetic pull)
-function magneticPull(currentPos, targetPos) {
-    const factor = 9999999; // overdrive
+// Dự đoán siêu cấp (hyper predict) + max boost
+function hyperPredict(target, ping, bulletSpeed) {
+    if (!target) return { x: 0, y: 0 };
+
+    // Độ trễ tính theo giây
+    const latencyComp = ping / 1000;
+
+    // Boost hệ số dự đoán MAX, dùng hàm mũ để siêu dự đoán
+    const insaneBoost = Math.pow(999999, 2); // hệ số nhân khủng
+
+    // Tính khoảng dịch chuyển dựa trên vận tốc và bù lag siêu cấp
+    const predictX = target.x + (target.velocityX * latencyComp * insaneBoost);
+    const predictY = target.y + (target.velocityY * latencyComp * insaneBoost);
+
+    // Auto head adjust (luôn bù về head nếu có)
+    const headAdjustX = target.head ? target.head.x : 0;
+    const headAdjustY = target.head ? target.head.y : 0;
+
+    // Tổng hợp tất cả cho điểm ngắm chuẩn tuyệt đối
     return {
-        x: currentPos.x + (targetPos.x - currentPos.x) * factor,
-        y: currentPos.y + (targetPos.y - currentPos.y) * factor
+        x: predictX + headAdjustX,
+        y: predictY + headAdjustY
     };
 }
 
-// Tăng tốc bắn tức thì (burst overkill)
-function instantBurst(weapon) {
+// Xuyên giáp + vô hạn damage + không cần đạn
+function godDamage(weapon) {
     if (!weapon) return;
-    weapon.fireRate = Infinity;
-    weapon.recoil = 0;
-    weapon.spread = 0;
+    weapon.damage = Infinity;           // sát thương vô hạn
+    weapon.penetration = Infinity;      // xuyên mọi vật thể
+    weapon.armorPiercing = true;        // bỏ qua giáp
+    weapon.ammo = Infinity;             // không bao giờ hết đạn
+    weapon.reloadTime = 0;              // bỏ luôn thời gian nạp đạn
 }
 
-// Bắn xuyên tường nếu thấy địch
+// Auto headshot kill
+function autoHeadshot(target) {
+    if (!target) return;
+    target.health = 0;  // giết ngay lập tức
+}
+
+// Kích hoạt toàn bộ hack ultimate
+function activateUltimateMode(player, weapon, target) {
+    autoLockOn(target);                 // khóa chết vào đầu
+    const predicted = hyperPredict(target, player.ping, weapon.projectileSpeed);
+    const aimPoint = magneticPull(target, predicted);  // kéo tâm từ xa
+    moveCrosshair(aimPoint.x, aimPoint.y);
+
+    instantBurst(weapon);               // bắn tức thì, không delay
+    godDamage(weapon);                  // damage vô hạn
+    autoShootThroughWall(target);       // xuyên tường luôn bắn
+    autoHeadshot(target);               // xử lý chết ngay
+}
+
+
+// Bắn xuyên tường siêu cấp - không gì cản nổi
 function autoShootThroughWall(target) {
     if (!target) return;
-    if (target.behindWall) {
-        shoot(); // hoặc hàm bắn gốc của bạn
+
+    // Kích hoạt chế độ xuyên tất cả vật thể
+    target.behindWall = false; // bỏ qua kiểm tra
+    target.cover = null; // xóa mọi cover
+
+    // Bỏ mọi điều kiện delay hoặc cooldown
+    if (typeof removeCollision === "function") {
+        removeCollision(target); // nếu có hàm gỡ va chạm
+    }
+
+    // Bắn ngay lập tức vào điểm chí mạng (head)
+    shoot({ 
+        x: target.head.x, 
+        y: target.head.y, 
+        ignoreWall: true,  // tùy game engine
+        damage: Infinity    // sát thương tuyệt đối
+    });
+
+    // Spam bắn liên tục cho đến khi mục tiêu chết hẳn
+    const killInterval = setInterval(() => {
+        if (!target || target.health <= 0) {
+            clearInterval(killInterval);
+        } else {
+            shoot({
+                x: target.head.x,
+                y: target.head.y,
+                ignoreWall: true,
+                damage: Infinity
+            });
+        }
+    }, 1); // 1ms bắn một lần, cực nhanh
+}
+
+
+
+/* ===============================
+   ADVANCED AIMBOT ENGINE – GOD MODE
+   =============================== */
+
+// Hệ số siêu cấp – không giới hạn
+const AIM_CONFIG = {
+    maxLockDistance: Infinity,
+    predictionBoost: 9999999,
+    magnetForce: Infinity,
+    snapSpeed: Infinity
+};
+
+// Hàm aim siêu hút (magnetic pull)
+function magneticPull(target, predicted) {
+    return {
+        x: (target.x + predicted.x) / 2,
+        y: (target.y + predicted.y) / 2
+    };
+}
+
+// Hàm di chuyển crosshair tức thì
+function moveCrosshair(x, y) {
+    if (typeof setCrosshair === 'function') {
+        setCrosshair(x, y); // API custom
+    } else {
+        // Giả lập chuột
+        window.dispatchEvent(new MouseEvent('mousemove', {
+            clientX: x,
+            clientY: y
+        }));
     }
 }
 
+// Hàm bắn không delay
+function shoot() {
+    if (typeof triggerShoot === 'function') {
+        triggerShoot();
+    } else {
+        const e = new MouseEvent('mousedown', { button: 0 });
+        window.dispatchEvent(e);
+    }
+}
 
-/* Time functions – multi mode */
-const now = {
-    highRes: () => typeof performance !== 'undefined' ? performance.now() : Date.now(),
-    epochMs: () => Date.now(),
-    epochSec: () => Math.floor(Date.now() / 1000),
-    frameBased: () => STATE.frameCount
-};
+// Hệ thống AutoLockOn
+function autoLockOn(target) {
+    if (!target) return null;
+    if (distanceToTarget(target) <= AIM_CONFIG.maxLockDistance) {
+        return target;
+    }
+    return null;
+}
 
+// Hàm tính khoảng cách
+function distanceToTarget(target) {
+    const dx = target.x - player.x;
+    const dy = target.y - player.y;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+// Hệ thống Hyper Combo
+function hyperCombo(currentTarget, playerPing, currentWeapon) {
+    const locked = autoLockOn(currentTarget);
+    if (locked) {
+        const predicted = hyperPredict(locked, playerPing, currentWeapon.projectileSpeed);
+        const aimPoint = magneticPull(locked, predicted);
+        moveCrosshair(aimPoint.x, aimPoint.y);
+        instantBurst(currentWeapon);
+        autoShootThroughWall(locked);
+    }
+}
+
+//sua hom 
 /* Smart getter – deep path, regex, multi fallback */
 function safeGet(obj, path, def = undefined) {
     try {
