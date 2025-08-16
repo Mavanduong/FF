@@ -9,6 +9,14 @@ const config = {
   targetZone: "body", // Ghim vào thân
   autoScope: true,
 };
+requestAnimationFrame(loop);
+function loop() {
+  try {
+    // logic aim ở đây
+  } catch(e) {}
+  requestAnimationFrame(loop);
+}
+
 
 let state = {
   lockedTarget: null,
