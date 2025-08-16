@@ -1,78 +1,26 @@
-// ==UserScript==
-// @name         FixRecoil v3.6 UltraPro GigaStealth + AntiLock Head Pull V2 + Shotgun TightSpread
-// @version      3.6.0
-// @description  Chống giật tối thượng + Né ghim đầu + Kéo tâm xuống thân + Gom đạn shotgun thành 1 tia
-// ==/UserScript==
-
-(function () {
+// req_keepalive.js — dùng cho http-request (Shadowrocket/Surge style)
+(() => {
   try {
-    if (!$response || !$response.body) return $done({});
-    let body = $response.body;
-    let data = JSON.parse(body);
+    if (!$request) { $done(); return; }
 
-    if (data?.weaponStats && data?.player && data?.system) {
-      const velocity = data.player?.velocity?.magnitude || 0;
-      const isJumping = data.player?.posture === "jumping";
-      const isAiming = data.player?.isAiming || false;
-      const fpsBaseBoost = (data.system.fps || 60) >= 90 ? 1.1 : 1.0;
-      const stabilityBoost = isAiming ? 1.25 : 1.0;
-      const movementFactor = isJumping ? 1.35 : (velocity > 3 ? 1.15 : 1.0);
+    const headers = $request.headers || {};
 
-      for (let weapon of data.weaponStats) {
-        weapon._backup = {
-          recoil: weapon.recoil,
-          verticalRecoil: weapon.verticalRecoil,
-          horizontalRecoil: weapon.horizontalRecoil,
-          shake: weapon.shake,
-          spread: weapon.spread,
-          recoilRecovery: weapon.recoilRecovery,
-          stability: weapon.stability,
-        };
+    // Giữ kết nối lâu hơn, tránh handshake lặp → ping ổn định hơn
+    headers["Connection"] = "keep-alive";
+    headers["Keep-Alive"] = "timeout=60, max=1000";
 
-        const randomizer = () => (Math.random() * 0.016 - 0.008);
+    // API không nên cache từ CDN
+    headers["Cache-Control"] = "no-cache";
+    headers["Pragma"] = "no-cache";
 
-        weapon.recoil = Math.max(0.10, 0.15 / movementFactor) + randomizer();
-        weapon.verticalRecoil = Math.max(0.13, 0.18 / movementFactor) + randomizer();
-        weapon.horizontalRecoil = Math.max(0.11, 0.17 / movementFactor) + randomizer();
-        weapon.shake = 0.058 + randomizer();
-        weapon.spread = 0.0075 + randomizer();
+    // Đính timestamp để bạn dễ đo RTT trong log
+    headers["X-GameBoost-Timestamp"] = String(Date.now());
 
-        weapon.recoilRecovery = 190 + Math.random() * 15 * fpsBaseBoost;
-        weapon.stability = (140 + Math.random() * 10) * stabilityBoost * fpsBaseBoost;
+    // Một số game thích Accept-Language/Encoding gọn nhẹ
+    if (!headers["Accept-Encoding"]) headers["Accept-Encoding"] = "gzip, deflate";
 
-        // --- Gom đạn shotgun thành 1 tia ---
-        if (/shotgun/i.test(weapon.name || "") || /m1014|m1887|spas/i.test(weapon.name || "")) {
-          weapon.spread = 0.0001; // gần như không tỏa
-          weapon.pelletSpread = 0.0001; // gom chặt
-          weapon.pelletCount = weapon.pelletCount || 8; // giữ số viên gốc
-        }
-
-        delete weapon._backup;
-      }
-    }
-
-    // --- Anti-lock head pull + kéo tâm xuống thân ---
-    if (
-      typeof game !== 'undefined' &&
-      typeof game.crosshair !== 'undefined' &&
-      typeof game.isEnemyLockingPlayer === 'function'
-    ) {
-      if (game.isEnemyLockingPlayer()) {
-        if (Math.random() < 0.99) {  // 99% xác suất hoạt động
-          const offsetX = (Math.random() - 0.5) * 18;
-          const offsetY = (Math.random() - 0.5) * 18;
-          const pullDownPx = 30;
-
-          game.crosshair.x += offsetX * 0.5;
-          game.crosshair.y += offsetY * 0.5 + pullDownPx * 0.9;
-        }
-      }
-    }
-
-    body = JSON.stringify(data);
-    $done({ body });
-
-  } catch (err) {
+    $done({ headers });
+  } catch (e) {
     $done({});
   }
 })();
