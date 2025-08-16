@@ -1,76 +1,98 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v12.0-GodFusionFinal
-// @version      12.0
-// @description  Tâm theo đầu 100% – Không giật – Aim đa tia – Không vuốt vẫn chết – FPS Boost
-// @match        *://*/*
-// @run-at       document-start
+// @name         AutoHeadlockProMax v12.3-SquadGodX
+// @version      12.3
+// @description  Ghim đầu cực đại – Không lệch thân – Không lệch chân – Ưu tiên đầu mọi trường hợp
 // ==/UserScript==
 
-(() => {
-  const settings = {
-    aimPower: 999999,
-    followSpeed: 9999,
-    noRecoil: true,
-    headLock: true,
-    predictMovement: true,
-    multiBulletComp: true,
-    stickyLock: true,
-    fpsBoost: true,
-    allRangeLock: true,
-    autoScopeAim: true,
-    distanceMax: Infinity,
-    preAimBeforeSwipe: true,
+const config = {
+  aimSpeed: 9999,
+  maxDistance: 150,
+  headLockForce: Infinity,
+  bodyIgnore: true,
+  stickyZone: "head",
+  prediction: true,
+  dynamicCorrection: true,
+  autoScope: true,
+  ignoreHeatSpread: true,
+};
+
+let state = {
+  lockedTarget: null,
+  bulletsFired: 0,
+};
+
+function getHeadPosition(target) {
+  return {
+    x: target.x,
+    y: target.y - (target.height * 0.9), // Ghim chính giữa đầu
+  };
+}
+
+function shouldIgnoreBody(targetPoint, enemy) {
+  const headTop = enemy.y - enemy.height;
+  const headBottom = enemy.y - enemy.height * 0.1;
+  return !(targetPoint.y >= headTop && targetPoint.y <= headBottom);
+}
+
+function aimAt(target) {
+  let head = getHeadPosition(target);
+
+  // Tính lệch do nòng nóng
+  let heat = Math.min(1, state.bulletsFired / 30);
+  let spread = config.ignoreHeatSpread ? 0 : (0.5 * heat);
+
+  let aim = {
+    x: head.x + random(-spread, spread),
+    y: head.y + random(-spread, spread),
   };
 
-  const enhanceFPS = () => {
-    try {
-      performance.now = () => 0;
-      requestAnimationFrame = (cb) => setTimeout(cb, 1);
-      console.log("[FusionFPS] Boosted FPS");
-    } catch (e) {}
-  };
+  // Kiểm tra lệch > 1cm thì tự động kéo lại
+  let distFromHead = Math.hypot(aim.x - head.x, aim.y - head.y);
+  if (distFromHead > 1) {
+    aim.x = head.x;
+    aim.y = head.y;
+  }
 
-  const aimLogic = () => {
-    game.on('tick', () => {
-      const enemies = game.enemies.filter(e => e.isVisible && e.health > 0);
-      if (enemies.length === 0) return;
+  // Bỏ qua nếu lệch xuống thân/dưới thân
+  if (config.bodyIgnore && shouldIgnoreBody(aim, target)) return;
 
-      let target = enemies.reduce((closest, e) => {
-        const dist = game.distanceTo(e.head);
-        return dist < game.distanceTo(closest.head) ? e : closest;
-      });
+  moveAimTo(aim.x, aim.y, config.aimSpeed);
+}
 
-      const aimVector = game.vectorTo(target.head);
-      const predicted = settings.predictMovement ? game.predict(target, aimVector) : target.head;
+game.on("tick", () => {
+  let enemies = game.getEnemies();
 
-      if (settings.headLock && game.inScope || settings.autoScopeAim) {
-        game.aimAt(predicted, settings.aimPower);
-      }
+  for (let enemy of enemies) {
+    if (!enemy.isVisible || enemy.health <= 0) continue;
 
-      if (settings.preAimBeforeSwipe && !game.isFiring && game.isAiming) {
-        game.aimAt(predicted, settings.aimPower * 2);
-      }
+    let distance = getDistance(player, enemy);
+    if (distance > config.maxDistance) continue;
 
-      if (settings.multiBulletComp && game.weapon.isBurst) {
-        game.autoAdjustSpray(predicted);
-      }
+    state.lockedTarget = enemy;
+    aimAt(enemy);
+    break;
+  }
+});
 
-      if (settings.noRecoil) {
-        game.weapon.recoil = 0;
-      }
+game.on("fire", () => {
+  state.bulletsFired += 1;
+});
 
-      if (settings.stickyLock) {
-        game.stickyTarget(target);
-      }
-    });
-  };
+game.on("reload", () => {
+  state.bulletsFired = 0;
+});
 
-  const init = () => {
-    if (settings.fpsBoost) enhanceFPS();
-    aimLogic();
-    console.log("[AutoHeadlockProMax v12.0] GodFusionFinal Loaded");
-  };
+function moveAimTo(x, y, speed) {
+  // Di chuyển tâm cực nhanh đến tọa độ chỉ định
+  player.aim.x += (x - player.aim.x) / speed;
+  player.aim.y += (y - player.aim.y) / speed;
+}
 
-  init();
-})();
+function getDistance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function random(min, max) {
+  return Math.random() * (max - min) + min;
+}
 
