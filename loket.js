@@ -1,59 +1,76 @@
 // ==UserScript==
-// @name         AutoHeadlockProMax v12.5-UltraSquadGod
-// @version      12.5
-// @description  Ghim đầu 1000% sức mạnh – Không dính thân/chân – Full tốc độ hút đầu mọi tình huống
+// @name         AutoHeadlockProMax v12.0-GodFusionFinal
+// @version      12.0
+// @description  Tâm theo đầu 100% – Không giật – Aim đa tia – Không vuốt vẫn chết – FPS Boost
+// @match        *://*/*
+// @run-at       document-start
 // ==/UserScript==
 
-const config = {
-  aimPower: 999999,             // Siêu lực hút
-  lockSpeed: 9999,              // Siêu tốc độ
-  predictFactor: 1.75,          // Dự đoán di chuyển
-  headPriority: true,           // Ưu tiên đầu tuyệt đối
-  avoidBodyZone: true,          // Bỏ qua vùng thân
-  avoidLowerZone: true,         // Bỏ qua thân dưới
-  stickyLock: true,             // Ghim dính tuyệt đối
-  dynamicCorrection: true,      // Tự điều chỉnh khi vuốt lệch
-  maxRange: 180,                // Tăng khoảng cách khóa
-  reaimDelay: 0,                // Không delay khi khóa lại
-  burstControl: true,           // Giữ lock từng viên
-  overrideHumanSwipe: true,     // Vuốt lệch vẫn auto vào đầu
-  squadLockMode: true,          // Ưu tiên mục tiêu nguy hiểm
-};
+(() => {
+  const settings = {
+    aimPower: 999999,
+    followSpeed: 9999,
+    noRecoil: true,
+    headLock: true,
+    predictMovement: true,
+    multiBulletComp: true,
+    stickyLock: true,
+    fpsBoost: true,
+    allRangeLock: true,
+    autoScopeAim: true,
+    distanceMax: Infinity,
+    preAimBeforeSwipe: true,
+  };
 
-function onEnemyDetected(enemy) {
-  if (!enemy.visible || enemy.health <= 0) return;
+  const enhanceFPS = () => {
+    try {
+      performance.now = () => 0;
+      requestAnimationFrame = (cb) => setTimeout(cb, 1);
+      console.log("[FusionFPS] Boosted FPS");
+    } catch (e) {}
+  };
 
-  let aimZone = enemy.head;
+  const aimLogic = () => {
+    game.on('tick', () => {
+      const enemies = game.enemies.filter(e => e.isVisible && e.health > 0);
+      if (enemies.length === 0) return;
 
-  if (config.avoidBodyZone && aimZone === enemy.body) return;
-  if (config.avoidLowerZone && (aimZone === enemy.legs || aimZone === enemy.feet)) return;
+      let target = enemies.reduce((closest, e) => {
+        const dist = game.distanceTo(e.head);
+        return dist < game.distanceTo(closest.head) ? e : closest;
+      });
 
-  if (config.headPriority) {
-    aimZone = enemy.head;
-  }
+      const aimVector = game.vectorTo(target.head);
+      const predicted = settings.predictMovement ? game.predict(target, aimVector) : target.head;
 
-  game.lockTarget({
-    target: enemy,
-    zone: aimZone,
-    speed: config.lockSpeed,
-    power: config.aimPower,
-    sticky: config.stickyLock,
-    predict: config.predictFactor,
-    dynamic: config.dynamicCorrection,
-  });
-}
+      if (settings.headLock && game.inScope || settings.autoScopeAim) {
+        game.aimAt(predicted, settings.aimPower);
+      }
 
-game.on('tick', () => {
-  const enemies = game.getEnemiesInRange(config.maxRange);
-  const validEnemies = enemies.filter(e => e.visible && e.health > 0);
+      if (settings.preAimBeforeSwipe && !game.isFiring && game.isAiming) {
+        game.aimAt(predicted, settings.aimPower * 2);
+      }
 
-  if (config.squadLockMode) {
-    validEnemies.sort((a, b) => b.damageOutput - a.damageOutput); // Ưu tiên địch nguy hiểm
-  }
+      if (settings.multiBulletComp && game.weapon.isBurst) {
+        game.autoAdjustSpray(predicted);
+      }
 
-  const target = validEnemies[0];
-  if (target) {
-    onEnemyDetected(target);
-  }
-});
+      if (settings.noRecoil) {
+        game.weapon.recoil = 0;
+      }
+
+      if (settings.stickyLock) {
+        game.stickyTarget(target);
+      }
+    });
+  };
+
+  const init = () => {
+    if (settings.fpsBoost) enhanceFPS();
+    aimLogic();
+    console.log("[AutoHeadlockProMax v12.0] GodFusionFinal Loaded");
+  };
+
+  init();
+})();
 
