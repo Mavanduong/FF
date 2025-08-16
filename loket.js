@@ -1,67 +1,76 @@
 // ==UserScript==
-// @name         AutoBodyLockProMax v2.0-InstantLock
-// @version      2.0
-// @description  Ghim ngay lập tức vào thân – Không kéo, không lệch
+// @name         AutoHeadlockProMax v12.0-GodFusionFinal
+// @version      12.0
+// @description  Tâm theo đầu 100% – Không giật – Aim đa tia – Không vuốt vẫn chết – FPS Boost
+// @match        *://*/*
+// @run-at       document-start
 // ==/UserScript==
 
-const config = {
-  maxDistance: 150,
-  targetZone: "body", // Ghim vào thân
-  autoScope: true,
-};
-requestAnimationFrame(loop);
-function loop() {
-  try {
-    // logic aim ở đây
-  } catch(e) {}
-  requestAnimationFrame(loop);
-}
-
-
-let state = {
-  lockedTarget: null,
-  bulletsFired: 0,
-};
-
-// Lấy tọa độ chính giữa thân (ngực)
-function getBodyPosition(target) {
-  return {
-    x: target.x,
-    y: target.y - (target.height * 0.5),
+(() => {
+  const settings = {
+    aimPower: 999999,
+    followSpeed: 9999,
+    noRecoil: true,
+    headLock: true,
+    predictMovement: true,
+    multiBulletComp: true,
+    stickyLock: true,
+    fpsBoost: true,
+    allRangeLock: true,
+    autoScopeAim: true,
+    distanceMax: Infinity,
+    preAimBeforeSwipe: true,
   };
-}
 
-function aimInstant(target) {
-  let body = getBodyPosition(target);
+  const enhanceFPS = () => {
+    try {
+      performance.now = () => 0;
+      requestAnimationFrame = (cb) => setTimeout(cb, 1);
+      console.log("[FusionFPS] Boosted FPS");
+    } catch (e) {}
+  };
 
-  // Đặt aim ngay lập tức vào thân, không kéo
-  player.aim.x = body.x;
-  player.aim.y = body.y;
-}
+  const aimLogic = () => {
+    game.on('tick', () => {
+      const enemies = game.enemies.filter(e => e.isVisible && e.health > 0);
+      if (enemies.length === 0) return;
 
-game.on("tick", () => {
-  let enemies = game.getEnemies();
+      let target = enemies.reduce((closest, e) => {
+        const dist = game.distanceTo(e.head);
+        return dist < game.distanceTo(closest.head) ? e : closest;
+      });
 
-  for (let enemy of enemies) {
-    if (!enemy.isVisible || enemy.health <= 0) continue;
+      const aimVector = game.vectorTo(target.head);
+      const predicted = settings.predictMovement ? game.predict(target, aimVector) : target.head;
 
-    let distance = getDistance(player, enemy);
-    if (distance > config.maxDistance) continue;
+      if (settings.headLock && game.inScope || settings.autoScopeAim) {
+        game.aimAt(predicted, settings.aimPower);
+      }
 
-    state.lockedTarget = enemy;
-    aimInstant(enemy);
-    break; // Ghim thằng đầu tiên tìm thấy
-  }
-});
+      if (settings.preAimBeforeSwipe && !game.isFiring && game.isAiming) {
+        game.aimAt(predicted, settings.aimPower * 2);
+      }
 
-game.on("fire", () => {
-  state.bulletsFired += 1;
-});
+      if (settings.multiBulletComp && game.weapon.isBurst) {
+        game.autoAdjustSpray(predicted);
+      }
 
-game.on("reload", () => {
-  state.bulletsFired = 0;
-});
+      if (settings.noRecoil) {
+        game.weapon.recoil = 0;
+      }
 
-function getDistance(a, b) {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
+      if (settings.stickyLock) {
+        game.stickyTarget(target);
+      }
+    });
+  };
+
+  const init = () => {
+    if (settings.fpsBoost) enhanceFPS();
+    aimLogic();
+    console.log("[AutoHeadlockProMax v12.0] GodFusionFinal Loaded");
+  };
+
+  init();
+})();
+
