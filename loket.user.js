@@ -1,64 +1,92 @@
-// ==UserScript==
-// @name         AutoHeadlock-Test
-// @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Tự động aim vào đầu địch (test version)
-// @author       You
-// @match        *://*/*
-// @grant        none
-// ==/UserScript==
+document.addEventListener("DOMContentLoaded", () => {
+    // Tạo nút chính
+    const mainBtn = document.createElement("div");
+    mainBtn.id = "assistive-touch";
+    mainBtn.style.cssText = `
+        position: fixed;
+        bottom: 100px;
+        right: 20px;
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: rgba(0,0,0,0.6);
+        color: #fff;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 20px;
+        cursor: pointer;
+        z-index: 9999;
+        user-select: none;
+    `;
+    mainBtn.innerHTML = "☰";
+    document.body.appendChild(mainBtn);
 
-(function() {
-    'use strict';
+    // Tạo menu
+    const menu = document.createElement("div");
+    menu.id = "assistive-menu";
+    menu.style.cssText = `
+        position: fixed;
+        bottom: 160px;
+        right: 20px;
+        display: none;
+        flex-direction: column;
+        gap: 10px;
+        z-index: 9999;
+    `;
+    document.body.appendChild(menu);
 
-    // Hàm lấy danh sách enemy (giả lập hoặc hook từ game)
-    function getEnemies() {
-        if (window.game && typeof game.getEnemies === 'function') {
-            return game.getEnemies(); // Nếu game có API này
+    // Các nút trong menu
+    const actions = [
+        { label: "🏠 Home", onClick: () => alert("Home Clicked") },
+        { label: "⬅️ Back", onClick: () => history.back() },
+        { label: "🔄 Reload", onClick: () => location.reload() },
+        { label: "🔊 Volume Up", onClick: () => alert("Volume Up") },
+        { label: "🔇 Volume Down", onClick: () => alert("Volume Down") }
+    ];
+
+    actions.forEach(action => {
+        const btn = document.createElement("button");
+        btn.textContent = action.label;
+        btn.style.cssText = `
+            padding: 8px 12px;
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+        `;
+        btn.addEventListener("click", action.onClick);
+        menu.appendChild(btn);
+    });
+
+    // Toggle menu
+    let menuVisible = false;
+    mainBtn.addEventListener("click", () => {
+        menuVisible = !menuVisible;
+        menu.style.display = menuVisible ? "flex" : "none";
+    });
+
+    // Kéo nút di chuyển
+    let isDragging = false, offsetX = 0, offsetY = 0;
+    mainBtn.addEventListener("mousedown", e => {
+        isDragging = true;
+        offsetX = e.clientX - mainBtn.offsetLeft;
+        offsetY = e.clientY - mainBtn.offsetTop;
+    });
+    document.addEventListener("mousemove", e => {
+        if (isDragging) {
+            mainBtn.style.left = `${e.clientX - offsetX}px`;
+            mainBtn.style.top = `${e.clientY - offsetY}px`;
+            mainBtn.style.right = "auto";
+            mainBtn.style.bottom = "auto";
+            menu.style.bottom = `${parseInt(mainBtn.style.top) - 60}px`;
+            menu.style.right = "auto";
+            menu.style.left = mainBtn.style.left;
         }
-        return []; // Không có gì thì trả rỗng
-    }
-
-    // Hàm lấy vị trí đầu của enemy
-    function getHeadPos(enemy) {
-        return enemy?.head || { x: 0, y: 0 };
-    }
-
-    // Hàm di chuyển tâm ngắm lên đầu
-    function moveCrosshair(x, y) {
-        const canvas = document.querySelector('canvas');
-        if (!canvas) return;
-        const rect = canvas.getBoundingClientRect();
-        const event = new MouseEvent('mousemove', {
-            clientX: rect.left + x,
-            clientY: rect.top + y,
-            bubbles: true
-        });
-        canvas.dispatchEvent(event);
-    }
-  function shoot() {
-    const e = new KeyboardEvent('keydown', { key: 'Mouse1', bubbles: true });
-    document.dispatchEvent(e);
-}
-
-
-    // Tick loop (liên tục kiểm tra và aim)
-    function tick() {
-        try {
-            const enemies = getEnemies();
-            if (!enemies.length) return;
-
-            // Chọn enemy gần nhất
-            const target = enemies[0];
-            if (!target) return;
-
-            const head = getHeadPos(target);
-            moveCrosshair(head.x, head.y);
-        } catch (e) {
-            console.error('AutoHeadlock error:', e);
-        }
-    }
-
-    // Chạy liên tục
-    setInterval(tick, 16); // 60 FPS
-})();
+    });
+    document.addEventListener("mouseup", () => {
+        isDragging = false;
+    });
+});
